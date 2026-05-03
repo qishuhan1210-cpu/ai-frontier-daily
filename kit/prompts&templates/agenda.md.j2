@@ -1,0 +1,60 @@
+{# 早报 agenda.md — 版式与固定文案在此维护；业务数据由 assemble 脚本注入。 #}
+{% macro news_item(it) -%}
+### {{ it.letter }}. {{ it.title_display }}
+
+**Point：** {{ it.point }}
+
+**一句话：** {{ it.one_liner }}
+
+**原文链接：**
+- [{{ it.link_label }}]({{ it.url }})
+
+**概要：** {{ it.summary }}
+
+**🌱 白话解释：** {{ it.plain_explain }}
+
+**🎯 影响：**
+1. **{{ it.impact_1 }}**
+1. **{{ it.impact_2 }}**
+---
+{% endmacro %}
+> **时间：** {{ header.date_str }}
+>
+> **覆盖范围：** {{ header.coverage_line }}
+>
+> **数据来源：** {{ header.sources_str }}
+>
+> **标签：** {{ header.header_tag }}
+>
+> **状态：** {{ header.header_status }}
+
+{% for section in sections %}
+{{ section.heading }}{% if section.empty %}
+*今日暂无相关报道*
+---
+{% else %}
+{% for it in section.entries %}
+{{ news_item(it) }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% if unknown is defined and unknown.entries and unknown.entries|length > 0 %}
+## 六、其他 · 未分类
+{% for it in unknown.entries %}
+{{ news_item(it) }}
+{% endfor %}
+{% endif %}
+{% if footer.mode == 'blocks' %}
+> **🚀 今日速览（一句话版）：**
+>
+{% for row in footer.rows %}
+> **{{ row.abbrev }}：** {{ row.lines[0] }}
+{% for line in row.lines[1:] %}
+> {{ line }}
+{% endfor %}
+{% endfor %}
+{% else %}
+{% for line in footer.fallback_lines %}
+{{ line }}
+{% endfor %}
+{% endif %}
