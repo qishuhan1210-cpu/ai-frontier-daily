@@ -60,17 +60,21 @@ def _load_engineering() -> Dict[str, Any]:
 
 
 def load_dedup_config() -> Dict[str, Any]:
-    """去重阈值与 n-gram；缺键时使用内置默认。"""
+    """去重阈值与 n-gram；缺键时使用内置默认。扩展键（如 recent_summary_*）从 engineering.json 合并。"""
     defaults = {
         'title_similarity_threshold': 0.85,
         'word_ngram_n': 3,
         'char_ngram_n': 3,
+        'recent_summary_enabled': True,
+        'recent_summary_days': 3,
+        'recent_summary_title_threshold': None,
+        'recent_summary_text_threshold': 0.38,
     }
     data = _load_engineering().get('dedup') or {}
     cfg = defaults.copy()
-    for k in defaults:
-        if k in data:
-            cfg[k] = data[k]
+    cfg.update(data)
+    if cfg.get('recent_summary_title_threshold') is None:
+        cfg['recent_summary_title_threshold'] = float(cfg['title_similarity_threshold'])
     return cfg
 
 

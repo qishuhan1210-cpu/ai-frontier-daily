@@ -15,7 +15,7 @@ import re
 import sys
 from datetime import datetime
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -38,6 +38,7 @@ JSON_ARTICLE_KEYS = (
     'plain_explain',
     'impact_1',
     'impact_2',
+    'digest_for_outline',
 )
 
 @lru_cache(maxsize=1)
@@ -118,6 +119,130 @@ def parse_llm_json_response(text: Optional[str]) -> Dict[str, Any]:
     return {}
 
 
+def _kept_index_list(n_items: int, data: Dict[str, Any]) -> List[int]:
+    drop_raw = data.get('deduplication', {}).get('drop_indices') or []
+    try:
+        drop = {int(x) for x in drop_raw}
+    except (TypeError, ValueError):
+        drop = set()
+    return [i for i in range(n_items) if i not in drop]
+
+
+def validate_unified_response(
+    data: Dict[str, Any],
+    n_items: int,
+    modules_data: Dict[str, Any],
+) -> Tuple[bool, List[str]]:
+    """校验 LLM 根 JSON：`articles` 与保留 index 对齐且六项字符串全非空；`blocks` 齐全。"""
+    errs: List[str] = []
+    if not isinstance(data, dict):
+        return False, ['根对象须为 JSON 对象']
+
+    dedup = data.get('deduplication')
+    if not isinstance(dedup, dict):
+        errs.append('缺少合法 deduplication 对象')
+        return False, errs
+
+    kept = _kept_index_list(n_items, data)
+    articles = data.get('articles')
+    if not isinstance(articles, list):
+        errs.append('articles 须为数组')
+        return False, errs
+
+    by_si: Dict[int, Dict[str, Any]] = {}
+    for a in articles:
+        if not isinstance(a, dict):
+            errs.append('articles 中存在非对象元素')
+            continue
+        si = a.get('source_index')
+        if si is None:
+            errs.append('某条 article 缺少 source_index')
+            continue
+        try:
+            ix = int(si)
+        except (TypeError, ValueError):
+            errs.append(f'source_index 非法: {si!r}')
+            continue
+        if ix in by_si:
+            errs.append(f'重复的 source_index: {ix}')
+        else:
+            by_si[ix] = a
+
+    if len(articles) != len(by_si):
+        errs.append(
+            f'articles 中存在重复或无效 source_index（原始 {len(articles)} 条，唯一有效 {len(by_si)} 条）'
+        )
+
+    exp = set(kept)
+    got = set(by_si.keys())
+    if exp != got:
+        if exp - got:
+            errs.append(f'遗漏保留 index 的 article: {sorted(exp - got)}')
+        if got - exp:
+            errs.append(f'source_index 不在保留集（应已 drop）: {sorted(got - exp)}')
+    if len(articles) != len(kept):
+        errs.append(
+            f'articles 条数 {len(articles)} 与保留条数 {len(kept)} 不一致（须一一对应）'
+        )
+
+    for i in kept:
+        row = by_si.get(i)
+        if not row:
+            continue
+        for k in JSON_ARTICLE_KEYS:
+            v = row.get(k)
+            if v is None or not str(v).strip():
+                errs.append(f'source_index={i} 的 `{k}` 为空或缺失')
+
+    module_ids = [
+        m['id']
+        for m in modules_data.get('modules', [])
+        if isinstance(m, dict) and m.get('id')
+    ]
+    blk = data.get('blocks')
+    if not isinstance(blk, dict):
+        errs.append('blocks 须为对象')
+    else:
+        header = blk.get('header')
+        if not isinstance(header, dict):
+            errs.append('blocks.header 须为对象')
+        else:
+            if not str(header.get('tags_full') or '').strip():
+                errs.append('blocks.header.tags_full 为空')
+            if not str(header.get('data_sources') or '').strip():
+                errs.append('blocks.header.data_sources 为空')
+        footer = blk.get('footer')
+        if not isinstance(footer, dict):
+            errs.append('blocks.footer 须为对象')
+        else:
+            for mid in module_ids:
+                if mid not in footer:
+                    errs.append(f'blocks.footer 缺少模块键 `{mid}`')
+                elif not str(footer.get(mid) or '').strip():
+                    errs.append(f'blocks.footer.{mid} 为空字符串')
+
+    return len(errs) == 0, errs
+
+
+def build_repair_appendix(
+    errors: List[str],
+    kept_indices: List[int],
+    module_ids: List[str],
+) -> str:
+    lines = errors[:35]
+    body = '\n'.join(f'- {x}' for x in lines)
+    ktxt = ', '.join(str(x) for x in kept_indices)
+    footer_keys = '、'.join(f'`{m}`' for m in module_ids) if module_ids else '（与运行时注入一致）'
+    return (
+        '\n\n---\n\n【强制补全】上一轮输出未通过程序校验，你必须改正后 **重新输出完整根 JSON**（不得只返回片段）。\n'
+        f'{body}\n\n'
+        f'保留 index 列表（须与 `deduplication.drop_indices` 一致）：[{ktxt}]；'
+        f'`articles` 必须恰好 **{len(kept_indices)}** 条，`source_index` 无重复、无遗漏；每条必须包含且六项均为非空字符串：'
+        '`point`、`one_liner`、`plain_explain`、`impact_1`、`impact_2`、`digest_for_outline`。\n'
+        f'`blocks.footer` 须包含键 {footer_keys}，且每键为非空字符串（无稿可写「今日暂无相关报道」）。'
+    )
+
+
 def merge_unified_into_items(
     items: List[dict],
     data: Dict[str, Any],
@@ -151,9 +276,10 @@ def merge_unified_into_items(
                 v = row.get(k)
                 if v is not None and str(v).strip():
                     item[k] = str(v).strip()
-            dig = (row.get('digest_for_outline') or '').strip()
+            dig = (item.get('digest_for_outline') or '').strip()
             base = (item.get('summary') or '').strip()
-            item['_ai_summary'] = (base or dig or item.get('content') or '')[:display_cap]
+            # 模型给出的概要压缩稿优先于 RSS 长摘要，便于控制「概要」字数（见 02_response_protocol）
+            item['_ai_summary'] = (dig or base or item.get('content') or '')[:display_cap]
         else:
             item['_ai_summary'] = (item.get('summary') or item.get('content') or '')[:display_cap]
         out.append(item)
@@ -188,7 +314,7 @@ def load_modules_context() -> Dict[str, Any]:
 
 def load_unified_settings(modules_data: dict) -> Dict[str, int]:
     defaults = {
-        'summary_max_chars': 600,
+        'summary_max_chars': 320,
         'summary_unified_max_items': 120,
         'summary_unified_item_max_chars': 1800,
     }
@@ -316,6 +442,11 @@ def run_summarize(input_file: str, output_file: str, date_str: str, config: dict
     api_calls = 1
 
     data = parse_llm_json_response(raw) if raw else {}
+    module_ids = [
+        m['id']
+        for m in modules_data.get('modules', [])
+        if isinstance(m, dict) and m.get('id')
+    ]
 
     if not data:
         print('⚠️ 统一响应解析失败或未返回 JSON，输出退化为仅 RSS 摘要')
@@ -324,8 +455,34 @@ def run_summarize(input_file: str, output_file: str, date_str: str, config: dict
         merged = items
         blocks_obj: Optional[Dict[str, Any]] = None
     else:
-        merged = merge_unified_into_items(items, data, display_cap)
-        blocks_obj = extract_blocks(data)
+        ok, errs = validate_unified_response(data, len(items), modules_data)
+        data_final: Dict[str, Any] = data
+        if not ok:
+            print(f'⚠️ 统一摘要 JSON 校验未通过（{len(errs)} 项）:', errs[:20])
+            repair = build_repair_appendix(
+                errs,
+                _kept_index_list(len(items), data),
+                module_ids,
+            )
+            raw2 = call_unified_llm(
+                client, model_name, user_prompt + repair, system_prompt
+            )
+            api_calls += 1
+            data2 = parse_llm_json_response(raw2) if raw2 else {}
+            if data2:
+                ok2, errs2 = validate_unified_response(data2, len(items), modules_data)
+                if ok2:
+                    data_final = data2
+                else:
+                    print(
+                        f'⚠️ 补全轮仍未通过校验（{len(errs2)} 项），仍采用补全轮 JSON 合并:',
+                        errs2[:20],
+                    )
+                    data_final = data2
+            else:
+                print('⚠️ 补全轮无有效 JSON，沿用首轮')
+        merged = merge_unified_into_items(items, data_final, display_cap)
+        blocks_obj = extract_blocks(data_final)
 
     return _write_bundle(merged, blocks_obj, unified=True, api_calls=api_calls)
 

@@ -3,7 +3,7 @@
 """
 ingest.py — 采集 · 关键词粗筛 · 去重
 
-三步在内存中串行：原始条目 list → 粗筛 list → 去重 list，**仅最后写入** `ingested.jsonl`。
+四步在内存中串行：原始条目 list → 粗筛 list → 篇内去重 list → **剔除近 N 日已在 `output/<date>/summary.json` 产出过的热点** → **仅最后写入** `ingested.jsonl`。
 配置与源列表：`kit/engineering.json`（`base_config` 加载）。
 """
 
@@ -17,7 +17,7 @@ import re
 import sys
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -31,11 +31,13 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _PROJECT_ROOT)
 
 from scripts.base_config import (
+    FN_SUMMARY,
     load_assembly_config,
     load_dedup_config,
     load_modules_window_hours,
     load_public_feeds_config,
     load_sources_config,
+    output_dir_for_date,
 )
 
 # =============================================================================
@@ -181,7 +183,6 @@ def _make_item(
         'url': link.strip(),
         'source': source,
         'summary': summary,
-        'content': '',
     }
     if pub_dt:
         item['pub_time'] = pub_dt.isoformat(sep=' ', timespec='seconds')
@@ -446,6 +447,159 @@ def jaccard_similarity(set_a, set_b):
     return intersection / union if union > 0 else 0.0
 
 
+# 近几日已产出条目的指纹（与 output/<date>/summary.json 对照）
+_OUTLINE_FINGERPRINT_MAX_CHARS = 1600
+_MIN_CHARS_FOR_BODY_DEDUP = 48
+
+
+def _normalize_url_for_dedup(url: Optional[str]) -> str:
+    """归一化 URL，用于与历史 summary 中 `url` 对比（去尾斜杠、小写 host、去 www）。"""
+    u = (url or '').strip()
+    if not u:
+        return ''
+    try:
+        p = urlparse(u)
+        netloc = (p.netloc or '').lower()
+        if netloc.startswith('www.'):
+            netloc = netloc[4:]
+        path = (p.path or '').rstrip('/')
+        if not path:
+            path = '/'
+        return f'{netloc}{path}'.lower()
+    except Exception:
+        return u.lower()
+
+
+def _prior_calendar_dates(ingest_date_str: str, n_days: int) -> List[str]:
+    base = datetime.strptime(ingest_date_str, '%Y-%m-%d')
+    return [(base - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(1, n_days + 1)]
+
+
+def _outline_text_from_summary_item(item: Dict[str, Any]) -> str:
+    """已产出 `summary.json` 单条：标题 + 摘要/结构化字段，拼成与 RSS 侧可对照的文本。"""
+    body = (item.get('summary') or '').strip() or (item.get('_ai_summary') or '').strip()
+    parts: List[str] = [x for x in (item.get('title') or '', body) if x]
+    for key in ('one_liner', 'plain_explain', 'digest_for_outline'):
+        t = item.get(key)
+        if t and str(t).strip():
+            parts.append(str(t).strip())
+    return ' '.join(parts)[:_OUTLINE_FINGERPRINT_MAX_CHARS]
+
+
+def load_recent_summary_fingerprints(
+    ingest_date_str: str, dcfg: Dict[str, Any]
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    读取 **ingest 当天之前** 共 `recent_summary_days` 个日历日、各日
+    `output/<date>/summary.json` 内 `items`，构造指纹（URL、标题 n-gram、正文 n-gram）。
+    """
+    if not dcfg.get('recent_summary_enabled', True):
+        return [], {'enabled': False, 'fingerprint_count': 0}
+
+    n_days = max(0, int(dcfg.get('recent_summary_days', 3)))
+    word_n = int(dcfg['word_ngram_n'])
+    char_n = int(dcfg['char_ngram_n'])
+    dates = _prior_calendar_dates(ingest_date_str, n_days)
+    fps: List[Dict[str, Any]] = []
+    by_file: List[Dict[str, Any]] = []
+
+    for d in dates:
+        path = os.path.join(output_dir_for_date(d), FN_SUMMARY)
+        if not os.path.isfile(path):
+            by_file.append({'date': d, 'path': path, 'loaded': 0, 'skip': 'missing'})
+            continue
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                bundle = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            by_file.append({'date': d, 'path': path, 'loaded': 0, 'skip': str(e)})
+            continue
+        rows = bundle.get('items')
+        if not isinstance(rows, list):
+            by_file.append({'date': d, 'path': path, 'loaded': 0, 'skip': 'no_items'})
+            continue
+        n_loaded = 0
+        for it in rows:
+            if not isinstance(it, dict):
+                continue
+            title = (it.get('title') or '').strip()
+            outline = _outline_text_from_summary_item(it)
+            fps.append(
+                {
+                    'url_norm': _normalize_url_for_dedup(it.get('url')),
+                    'source': (it.get('source') or '').strip(),
+                    'title_tok': similarity_tokens(title, word_n, char_n),
+                    'body_tok': similarity_tokens(outline, word_n, char_n),
+                    'outline_len': len(outline),
+                }
+            )
+            n_loaded += 1
+        by_file.append({'date': d, 'path': path, 'loaded': n_loaded})
+
+    meta = {
+        'enabled': True,
+        'dates_scanned': dates,
+        'fingerprint_count': len(fps),
+        'by_file': by_file,
+    }
+    return fps, meta
+
+
+def _rss_item_overlaps_recent(
+    item: Dict[str, Any],
+    fingerprints: List[Dict[str, Any]],
+    dcfg: Dict[str, Any],
+) -> bool:
+    """是否与近几日 summary 中任一条目判定为同一热点（URL / 标题 / 正文相似）。"""
+    if not fingerprints:
+        return False
+    word_n = int(dcfg['word_ngram_n'])
+    char_n = int(dcfg['char_ngram_n'])
+    tt = float(dcfg['recent_summary_title_threshold'])
+    tb = float(dcfg['recent_summary_text_threshold'])
+
+    url_n = _normalize_url_for_dedup(item.get('url'))
+    title = (item.get('title') or '').strip()
+    outline = f'{title} {(item.get("summary") or "")}'.strip()[:_OUTLINE_FINGERPRINT_MAX_CHARS]
+    title_tok = similarity_tokens(title, word_n, char_n)
+    body_tok = similarity_tokens(outline, word_n, char_n)
+
+    for fp in fingerprints:
+        fn = fp.get('url_norm') or ''
+        if url_n and fn and url_n == fn:
+            return True
+        if title_tok and fp.get('title_tok'):
+            if jaccard_similarity(title_tok, fp['title_tok']) >= tt:
+                return True
+        if len(outline) >= _MIN_CHARS_FOR_BODY_DEDUP and body_tok and fp.get('body_tok'):
+            olen = int(fp.get('outline_len') or 0)
+            if olen >= _MIN_CHARS_FOR_BODY_DEDUP:
+                if jaccard_similarity(body_tok, fp['body_tok']) >= tb:
+                    return True
+    return False
+
+
+def filter_recent_summary_overlap(
+    items: List[Dict[str, Any]],
+    ingest_date_str: str,
+    dcfg: Dict[str, Any],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """剔除与近几日 `output/.../summary.json` 已产出热点重复的条目（在篇内去重之后执行）。"""
+    fps, meta = load_recent_summary_fingerprints(ingest_date_str, dcfg)
+    if not meta.get('enabled', True) or not fps:
+        return items, {**meta, 'dropped': 0, 'kept': len(items)}
+
+    kept: List[Dict[str, Any]] = []
+    dropped = 0
+    for it in items:
+        if _rss_item_overlaps_recent(it, fps, dcfg):
+            dropped += 1
+            continue
+        kept.append(it)
+
+    return kept, {**meta, 'dropped': dropped, 'kept': len(kept)}
+
+
 def dedup_items(items: List[Dict[str, Any]], _config: dict) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """步骤 3：URL 精确去重 + 标题模糊去重（纯内存）。"""
     dcfg = load_dedup_config()
@@ -486,21 +640,25 @@ def dedup_items(items: List[Dict[str, Any]], _config: dict) -> Tuple[List[Dict[s
 
 
 def run_ingest(date_str: str, config: dict, output_file: str) -> Dict[str, Any]:
-    """抓取 → 粗筛 → 去重，全程内存流水线，只在结尾写入 `output_file` 一次。"""
+    """抓取 → 粗筛 → 篇内去重 → 近几日 summary 对照剔除，只在结尾写入 `output_file` 一次。"""
     raw_items, crawl_meta = fetch_raw_items(date_str, config)
     filtered, filter_stats = filter_items(raw_items, config)
     deduped, dedup_stats = dedup_items(filtered, config)
 
+    dcfg = load_dedup_config()
+    recent_filtered, recent_meta = filter_recent_summary_overlap(deduped, date_str, dcfg)
+
     os.makedirs(os.path.dirname(output_file) or '.', exist_ok=True)
     with open(output_file, 'w', encoding='utf-8') as fout:
-        for it in deduped:
+        for it in recent_filtered:
             fout.write(json.dumps(it, ensure_ascii=False) + '\n')
 
     return {
-        'count': dedup_stats.get('count', 0),
+        'count': recent_meta.get('kept', len(recent_filtered)),
         'crawl': crawl_meta,
         'filter': filter_stats,
         'dedup': dedup_stats,
+        'recent_summary_dedup': recent_meta,
     }
 
 
@@ -528,10 +686,12 @@ def main(argv: Optional[List[str]] = None) -> None:
     out = args.output or default_day_paths(date_str)['ingested']
 
     r = run_ingest(date_str, cfg, out)
+    recent = r.get('recent_summary_dedup') or {}
     print(
         f"Done. ingested={r['count']}, "
         f"crawl_status={r['crawl'].get('status')}, "
-        f"feeds_failed={r['crawl'].get('feeds_failed', 0)}"
+        f"feeds_failed={r['crawl'].get('feeds_failed', 0)}, "
+        f"recent_summary_dropped={recent.get('dropped', 0)}"
     )
 
 

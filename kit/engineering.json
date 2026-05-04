@@ -22,7 +22,11 @@
   "dedup": {
     "title_similarity_threshold": 0.85,
     "word_ngram_n": 3,
-    "char_ngram_n": 3
+    "char_ngram_n": 3,
+    "recent_summary_enabled": true,
+    "recent_summary_days": 3,
+    "recent_summary_title_threshold": 0.82,
+    "recent_summary_text_threshold": 0.38
   },
   "sources": {
     "tier1": [
@@ -88,7 +92,7 @@
     ],
     "time_window_hours": 48,
     "max_news_per_module": 8,
-    "summary_max_chars": 600,
+    "summary_max_chars": 320,
     "summary_unified_max_items": 120,
     "summary_unified_item_max_chars": 1800
   }

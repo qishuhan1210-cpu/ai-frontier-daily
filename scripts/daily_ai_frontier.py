@@ -69,7 +69,10 @@ def _run_ingest(paths: Dict[str, str], date_str: str, config: dict) -> Optional[
 
     out = paths['ingested']
     r = run_ingest(date_str, config, out)
-    print(f"✅ ingest → {out}  ({r.get('count', 0)} 条)")
+    recent = r.get('recent_summary_dedup') or {}
+    drop_n = int(recent.get('dropped') or 0)
+    tail = f"，近几日 summary 对照剔除 {drop_n} 条" if drop_n else ''
+    print(f"✅ ingest → {out}  ({r.get('count', 0)} 条{tail})")
     return out if r.get('count', 0) else None
 
 
