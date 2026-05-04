@@ -5,7 +5,7 @@
       "max_retries": 3,
       "max_items_per_feed": 50,
       "max_items_total": 800,
-      "user_agent": "Mozilla/5.0 (compatible; AIFrontierDaily/1.0; +https://github.com/qclaw/ai-frontier-daily) AppleWebKit/537.36 (KHTML, like Gecko)",
+      "user_agent": "Mozilla/5.0 (compatible; AIFrontierDaily/1.0; +https://github.com/YOUR_GITHUB_OR_USER/ai-frontier-daily) AppleWebKit/537.36 (KHTML, like Gecko)",
       "retry_backoff_seconds": 1.5
     },
     "feeds": [

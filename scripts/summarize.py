@@ -9,6 +9,7 @@ summarize.py — 统一 LLM 摘要
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -224,6 +225,132 @@ def validate_unified_response(
     return len(errs) == 0, errs
 
 
+def merge_llm_articles(
+    data_a: Optional[Dict[str, Any]],
+    data_b: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """合并两轮返回的 articles：同一 source_index 下，非空字段后出现的覆盖先出现的（补全轮优先于首轮）。"""
+    by_ix: Dict[int, Dict[str, Any]] = {}
+    for src in (data_a, data_b):
+        if not src:
+            continue
+        for row in src.get('articles') or []:
+            if not isinstance(row, dict):
+                continue
+            try:
+                ix = int(row['source_index'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if ix not in by_ix:
+                by_ix[ix] = {'source_index': ix}
+            acc = by_ix[ix]
+            for k in JSON_ARTICLE_KEYS:
+                v = str(row.get(k) or '').strip()
+                if v:
+                    acc[k] = v
+    return sorted(by_ix.values(), key=lambda x: x['source_index'])
+
+
+def merge_llm_payload(
+    data_a: Optional[Dict[str, Any]],
+    data_b: Optional[Dict[str, Any]],
+    modules_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    合并首轮与补全轮完整 payload：articles 按字段合并；deduplication 优先补全轮；
+    blocks.header/footer 逐键择优（非空优先补全轮）。
+    """
+    if not data_a and not data_b:
+        return {}
+    if not data_b:
+        return copy.deepcopy(data_a)  # type: ignore[arg-type]
+    if not data_a:
+        return copy.deepcopy(data_b)
+
+    out = copy.deepcopy(data_b)
+    out['articles'] = merge_llm_articles(data_a, data_b)
+
+    if isinstance(data_b.get('deduplication'), dict):
+        out['deduplication'] = copy.deepcopy(data_b['deduplication'])
+    else:
+        out['deduplication'] = copy.deepcopy(data_a.get('deduplication') or {})
+
+    module_ids = [
+        m['id']
+        for m in modules_data.get('modules', [])
+        if isinstance(m, dict) and m.get('id')
+    ]
+    ba = data_a.get('blocks') if isinstance(data_a.get('blocks'), dict) else {}
+    bb = data_b.get('blocks') if isinstance(data_b.get('blocks'), dict) else {}
+    ha = ba.get('header') if isinstance(ba.get('header'), dict) else {}
+    hb = bb.get('header') if isinstance(bb.get('header'), dict) else {}
+    fa = ba.get('footer') if isinstance(ba.get('footer'), dict) else {}
+    fb = bb.get('footer') if isinstance(bb.get('footer'), dict) else {}
+
+    header_out = {
+        'tags_full': str(hb.get('tags_full') or '').strip()
+        or str(ha.get('tags_full') or '').strip(),
+        'data_sources': str(hb.get('data_sources') or '').strip()
+        or str(ha.get('data_sources') or '').strip(),
+    }
+    footer_out: Dict[str, str] = {}
+    for mid in module_ids:
+        vb = str(fb.get(mid) or '').strip()
+        va = str(fa.get(mid) or '').strip()
+        footer_out[mid] = vb or va or '今日暂无相关报道'
+
+    if not isinstance(out.get('blocks'), dict):
+        out['blocks'] = {}
+    out['blocks']['header'] = header_out
+    out['blocks']['footer'] = footer_out
+    return out
+
+
+def _clip_outline(text: str, max_chars: int) -> str:
+    t = re.sub(r'\s+', ' ', (text or '').strip())
+    if len(t) <= max_chars:
+        return t
+    return t[: max_chars - 1] + '…'
+
+
+def fill_missing_article_fields(item: dict, display_cap: int) -> List[str]:
+    """
+    LLM 漏条或漏字段时，用标题与 RSS 摘要做兜底，保证 summary.json 可消费。
+    返回本次补全的字段名列表（写入 `_article_autofill_keys` 便于排查）。
+    """
+    patched: List[str] = []
+    title = (item.get('title') or '').strip()
+    summary = (item.get('summary') or '').strip()
+    blob = summary or title
+
+    if not str(item.get('point') or '').strip():
+        item['point'] = _clip_outline(title, 42) or '（基于标题的简要标注）'
+        patched.append('point')
+    if not str(item.get('one_liner') or '').strip():
+        item['one_liner'] = _clip_outline(title, 38) or str(item.get('point') or '')[:38]
+        patched.append('one_liner')
+    if not str(item.get('plain_explain') or '').strip():
+        item['plain_explain'] = _clip_outline(blob, 120)
+        patched.append('plain_explain')
+    if not str(item.get('impact_1') or '').strip():
+        item['impact_1'] = '对关注相关赛道与供应链的读者有信息增量'
+        patched.append('impact_1')
+    if not str(item.get('impact_2') or '').strip():
+        item['impact_2'] = '具体影响需结合后续落地与独立信源核实'
+        patched.append('impact_2')
+    if not str(item.get('digest_for_outline') or '').strip():
+        cap = max(display_cap, 260)
+        item['digest_for_outline'] = _clip_outline(blob, cap)
+        patched.append('digest_for_outline')
+
+    dig = (item.get('digest_for_outline') or '').strip()
+    base = (item.get('summary') or '').strip()
+    item['_ai_summary'] = (dig or base or item.get('content') or '')[:display_cap]
+    if patched:
+        item['_article_autofill_keys'] = patched
+    return patched
+
+
 def build_repair_appendix(
     errors: List[str],
     kept_indices: List[int],
@@ -282,6 +409,7 @@ def merge_unified_into_items(
             item['_ai_summary'] = (dig or base or item.get('content') or '')[:display_cap]
         else:
             item['_ai_summary'] = (item.get('summary') or item.get('content') or '')[:display_cap]
+        fill_missing_article_fields(item, display_cap)
         out.append(item)
     return out
 
@@ -427,7 +555,7 @@ def run_summarize(input_file: str, output_file: str, date_str: str, config: dict
 
     if not client:
         for item in items:
-            item['_ai_summary'] = (item.get('summary') or item.get('content') or '')[:display_cap]
+            fill_missing_article_fields(item, display_cap)
         return _write_bundle(items, None, unified=False, api_calls=0)
 
     if len(items) > max_items:
@@ -449,9 +577,9 @@ def run_summarize(input_file: str, output_file: str, date_str: str, config: dict
     ]
 
     if not data:
-        print('⚠️ 统一响应解析失败或未返回 JSON，输出退化为仅 RSS 摘要')
+        print('⚠️ 统一响应解析失败或未返回 JSON，输出退化为仅 RSS 摘要 + 字段兜底')
         for item in items:
-            item['_ai_summary'] = (item.get('summary') or item.get('content') or '')[:display_cap]
+            fill_missing_article_fields(item, display_cap)
         merged = items
         blocks_obj: Optional[Dict[str, Any]] = None
     else:
@@ -471,18 +599,24 @@ def run_summarize(input_file: str, output_file: str, date_str: str, config: dict
             data2 = parse_llm_json_response(raw2) if raw2 else {}
             if data2:
                 ok2, errs2 = validate_unified_response(data2, len(items), modules_data)
+                # 按字段合并两轮 articles，避免补全轮只改正部分 index 时丢掉首轮已有字段
+                data_final = merge_llm_payload(data, data2, modules_data)
                 if ok2:
-                    data_final = data2
+                    pass
                 else:
                     print(
-                        f'⚠️ 补全轮仍未通过校验（{len(errs2)} 项），仍采用补全轮 JSON 合并:',
+                        f'⚠️ 补全轮仍未通过校验（{len(errs2)} 项），已合并两轮 articles 并将在合并后做字段兜底:',
                         errs2[:20],
                     )
-                    data_final = data2
             else:
                 print('⚠️ 补全轮无有效 JSON，沿用首轮')
         merged = merge_unified_into_items(items, data_final, display_cap)
         blocks_obj = extract_blocks(data_final)
+        n_auto = sum(1 for it in merged if it.get('_article_autofill_keys'))
+        if n_auto:
+            print(
+                f'⚠️ 有 {n_auto} 条使用了标题/摘要兜底字段（键名见各条 `_article_autofill_keys`）'
+            )
 
     return _write_bundle(merged, blocks_obj, unified=True, api_calls=api_calls)
 

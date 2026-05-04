@@ -31,6 +31,7 @@
 {% for section in sections %}
 {{ section.heading }}{% if section.empty %}
 *今日暂无相关报道*
+
 ---
 {% else %}
 {% for it in section.entries %}
