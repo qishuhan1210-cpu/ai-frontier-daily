@@ -496,7 +496,7 @@ def load_recent_summary_fingerprints(
     if not dcfg.get('recent_summary_enabled', True):
         return [], {'enabled': False, 'fingerprint_count': 0}
 
-    n_days = max(0, int(dcfg.get('recent_summary_days', 3)))
+    n_days = max(0, int(dcfg.get('recent_summary_days', 7)))
     word_n = int(dcfg['word_ngram_n'])
     char_n = int(dcfg['char_ngram_n'])
     dates = _prior_calendar_dates(ingest_date_str, n_days)

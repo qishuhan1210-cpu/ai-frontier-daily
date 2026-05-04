@@ -66,7 +66,7 @@ def load_dedup_config() -> Dict[str, Any]:
         'word_ngram_n': 3,
         'char_ngram_n': 3,
         'recent_summary_enabled': True,
-        'recent_summary_days': 3,
+        'recent_summary_days': 7,
         'recent_summary_title_threshold': None,
         'recent_summary_text_threshold': 0.38,
     }
