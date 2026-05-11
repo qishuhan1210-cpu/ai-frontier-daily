@@ -13,7 +13,7 @@
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `drop_indices` | number[] | 是 | 丢弃的原始 `index`（重复 + 价值筛选裁掉）；可 `[]` |
-| `notes` | string | 否 | 去重/筛选简述；若执行「多于 12 条截断」须写明依据；若有极少数豁免须在 notes 点名 |
+| `notes` | string | 否 | 去重/筛选简述；若执行「多于 12 条截断」须写明依据；若有极少数豁免须在 notes 点名；若剔除了非 AI 相关内容也须说明 |
 
 ### `articles`
 
@@ -32,14 +32,13 @@
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
 | `source_index` | number | 必填 | 清单编号 |
-| `point` | string | ~30 字 | 从业者视角：为何值得看 |
-| `one_liner` | string | ~25 字 | 客观一句：发生了什么 |
-| `plain_explain` | string | ~50 字 | 白话说明背景与要点 |
-| `impact_1` | string | ~30 字 | 影响/后果一 |
-| `impact_2` | string | ~30 字 | 影响/后果二 |
-| `digest_for_outline` | string | **尽量 ≤250 汉字**（信息量大、确有必要的**特例**可略超，但须避免冗长） | **概要**：供早报「概要」正文使用；独立压缩稿（删开场媒体套话、重复引述，保留事实、主体、时间、数字与可核验结论），**禁止**与 title/one_liner 简单重复堆砌。**若原文/导语本身信息量有限，只写能支撑读者理解的最小充分内容，禁止为凑字数而灌水、重复及套话扩写** |
+| `headline` | string | ~60 字 | **合并标题**：将"point"与"one_liner"合并为一个更长的标题，包含从业者视角和客观概括 |
+| `plain_explain` | string | ~80 字 | **白话说明**：面向小白用户解释背景与要点，用通俗语言解释企业新闻和生僻概念 |
+| `impacts` | string | ~60 字 | **影响分析**：合并 impact_1 和 impact_2，说明该新闻的影响和后果 |
+| `digest_for_outline` | string | **尽量 ≤300 汉字**（信息量大、确有必要的**特例**可略超，但须避免冗长） | **概要**：供早报「概要」正文使用；独立压缩稿（删开场媒体套话、重复引述，保留事实、主体、时间、数字与可核验结论），**禁止**与 headline 简单重复堆砌。**若原文/导语本身信息量有限，只写能支撑读者理解的最小充分内容，禁止为凑字数而灌水、重复及套话扩写** |
+| `tags` | string | 3-5 个标签 | **标签体系**：空格分隔的标签，从候选集合中选择：`#企业硬件` `#协议基建` `#AI落地` `#地缘政治` `#大模型` `#AI工程` `#产业商业` `#政策监管` `#开源生态` `#AI安全` |
 
-**填充率目标**：本回合 `articles` 内上述 **6×N** 个字符串槽位，非空率应 **≥95%**；工程侧会校验，不达标将要求整份 JSON 重写。**豁免**（整条不写、仍进保留集）仅允许在原文极度匮乏且已在 `deduplication.notes` 说明——**不得滥用**。
+**填充率目标**：本回合 `articles` 内上述字段，非空率应 **≥95%**；工程侧会校验，不达标将要求整份 JSON 重写。**豁免**（整条不写、仍进保留集）仅允许在原文极度匮乏且已在 `deduplication.notes` 说明——**不得滥用**。
 
 ---
 
@@ -66,16 +65,15 @@
   "articles": [
     {
       "source_index": 0,
-      "point": "（从业者视角一句，非空）",
-      "one_liner": "（客观概括，非空）",
-      "plain_explain": "（白话，非空）",
-      "impact_1": "（影响一，非空）",
-      "impact_2": "（影响二，非空）",
-      "digest_for_outline": "（尽量≤250字；短消息则写短，非空）"
+      "headline": "（合并后的长标题，约60字）",
+      "plain_explain": "（白话说明，约80字）",
+      "impacts": "（影响分析，约60字）",
+      "digest_for_outline": "（尽量≤300字；短消息则写短，非空）",
+      "tags": "#大模型 #AI工程"
     }
   ],
   "blocks": {
-    "header": { "tags_full": "#AI早报 #大模型", "data_sources": "量子位 · 36氪" },
+    "header": { "tags_full": "#AI早报 #大模型 #AI工程", "data_sources": "量子位 · 36氪" },
     "footer": {
       "hardware": "今日暂无相关报道",
       "model": "（≤40字模块速览）",
@@ -92,5 +90,5 @@
 1. `articles.length` ≤ 12，且每条 `source_index` ∉ `drop_indices`。  
 2. 设保留 index 集合为 K：**`articles` 条数等于 K 的元素个数**，且 **`source_index` 去重后等于 K**。  
 3. **8～12 条收敛**：若清单去重后仍 **>12** 条，必须排序截断至 **≤12**，且 `notes` 体现截断；目标区间内 **每板块条数 ≤ 4**。  
-4. **六项全满**：对每条 article，`point`、`one_liner`、`plain_explain`、`impact_1`、`impact_2`、`digest_for_outline` 均为 **非空字符串**；`digest_for_outline` **尽量不超过 250 字**，内容少则写短、**不灌水凑篇幅**，仅在信息量大等特例下可略超。  
+4. **五项全满**：对每条 article，`headline`、`plain_explain`、`impacts`、`digest_for_outline`、`tags` 均为 **非空字符串**；`digest_for_outline` **尽量不超过 300 字**，内容少则写短、**不灌水凑篇幅**，仅在信息量大等特例下可略超。  
 5. `blocks.header.tags_full`、`blocks.header.data_sources` 非空；`blocks.footer` 键齐全且每值非空；`data_sources` 不虚构。

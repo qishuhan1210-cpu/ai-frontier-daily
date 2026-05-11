@@ -15,6 +15,7 @@ import os
 import re
 import sys
 from datetime import datetime
+import time
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -34,12 +35,11 @@ _TEMPLATE_SYSTEM = 'system.md.j2'
 _TEMPLATE_RUNTIME_INJECTION = 'runtime_injection.md.j2'
 
 JSON_ARTICLE_KEYS = (
-    'point',
-    'one_liner',
+    'headline',
     'plain_explain',
-    'impact_1',
-    'impact_2',
+    'impacts',
     'digest_for_outline',
+    'tags',
 )
 
 @lru_cache(maxsize=1)
@@ -323,25 +323,30 @@ def fill_missing_article_fields(item: dict, display_cap: int) -> List[str]:
     summary = (item.get('summary') or '').strip()
     blob = summary or title
 
-    if not str(item.get('point') or '').strip():
-        item['point'] = _clip_outline(title, 42) or '（基于标题的简要标注）'
-        patched.append('point')
-    if not str(item.get('one_liner') or '').strip():
-        item['one_liner'] = _clip_outline(title, 38) or str(item.get('point') or '')[:38]
-        patched.append('one_liner')
+    if not str(item.get('headline') or '').strip():
+        item['headline'] = _clip_outline(title, 80) or '（基于标题的简要标注）'
+        patched.append('headline')
     if not str(item.get('plain_explain') or '').strip():
-        item['plain_explain'] = _clip_outline(blob, 120)
+        item['plain_explain'] = _clip_outline(blob, 120) or '（待补充背景说明）'
         patched.append('plain_explain')
-    if not str(item.get('impact_1') or '').strip():
-        item['impact_1'] = '对关注相关赛道与供应链的读者有信息增量'
-        patched.append('impact_1')
-    if not str(item.get('impact_2') or '').strip():
-        item['impact_2'] = '具体影响需结合后续落地与独立信源核实'
-        patched.append('impact_2')
+    if not str(item.get('impacts') or '').strip():
+        item['impacts'] = '对关注相关赛道与供应链的读者有信息增量，具体影响需结合后续落地与独立信源核实'
+        patched.append('impacts')
     if not str(item.get('digest_for_outline') or '').strip():
         cap = max(display_cap, 260)
         item['digest_for_outline'] = _clip_outline(blob, cap)
         patched.append('digest_for_outline')
+    if not str(item.get('tags') or '').strip():
+        module_guess = item.get('_matched_module', 'unknown')
+        tag_mapping = {
+            'hardware': '#企业硬件',
+            'model': '#大模型',
+            'ai_engineering': '#AI工程',
+            'industry': '#产业商业',
+            'policy': '#政策监管',
+        }
+        item['tags'] = tag_mapping.get(module_guess, '#AI工程')
+        patched.append('tags')
 
     dig = (item.get('digest_for_outline') or '').strip()
     base = (item.get('summary') or '').strip()
@@ -364,8 +369,8 @@ def build_repair_appendix(
         '\n\n---\n\n【强制补全】上一轮输出未通过程序校验，你必须改正后 **重新输出完整根 JSON**（不得只返回片段）。\n'
         f'{body}\n\n'
         f'保留 index 列表（须与 `deduplication.drop_indices` 一致）：[{ktxt}]；'
-        f'`articles` 必须恰好 **{len(kept_indices)}** 条，`source_index` 无重复、无遗漏；每条必须包含且六项均为非空字符串：'
-        '`point`、`one_liner`、`plain_explain`、`impact_1`、`impact_2`、`digest_for_outline`。\n'
+        f'`articles` 必须恰好 **{len(kept_indices)}** 条，`source_index` 无重复、无遗漏；每条必须包含且五项均为非空字符串：'
+        '`headline`、`plain_explain`、`impacts`、`digest_for_outline`、`tags`。\n'
         f'`blocks.footer` 须包含键 {footer_keys}，且每键为非空字符串（无稿可写「今日暂无相关报道」）。'
     )
 
@@ -498,6 +503,7 @@ def call_unified_llm(
     system_content: str,
 ) -> Optional[str]:
     try:
+        start_time = time.time()
         response = client.chat.completions.create(
             model=model_name,
             n=1,
@@ -506,9 +512,12 @@ def call_unified_llm(
                 {'role': 'user', 'content': user_content},
             ],
         )
+        elapsed_time = time.time() - start_time
+        print(f'⏱️ 统一 LLM 调用完成，耗时: {elapsed_time:.2f} 秒')
         return response.choices[0].message.content
     except Exception as e:
-        print(f'⚠️ 统一 LLM 调用失败: {e}')
+        elapsed_time = time.time() - start_time
+        print(f'⚠️ 统一 LLM 调用失败（耗时: {elapsed_time:.2f} 秒）: {e}')
         return None
 
 

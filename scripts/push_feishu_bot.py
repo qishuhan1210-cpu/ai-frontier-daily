@@ -7,8 +7,13 @@ push_feishu_bot.py — §4 群机器人：交互式卡片推送
 POST 至飞书自定义机器人 Webhook。见 skill 根目录 `post-runbook.md`。
 
 用法:
+    # 使用 Webhook 方式
     export FEISHU_BOT_WEBHOOK='https://open.feishu.cn/open-apis/bot/v2/hook/…'
     python3 scripts/push_feishu_bot.py --date 2026-05-04 --doc-url 'https://xxx.feishu.cn/…'
+
+    # 使用 lark-cli 方式
+    python3 scripts/push_feishu_bot.py --date 2026-05-04 --doc-url 'https://xxx.feishu.cn/…' \
+        --lark-cli --chat-id oc_xxxxxxxxxxxxxxxx
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -150,6 +156,40 @@ def _post_webhook(url: str, payload: Dict[str, Any], timeout: float = 30.0) -> D
     return json.loads(raw) if raw.strip() else {}
 
 
+def _send_via_lark_cli(chat_id: str, payload: Dict[str, Any]) -> bool:
+    """使用 lark-cli 发送消息"""
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    cmd = [
+        'lark-cli',
+        'im',
+        '+messages-send',
+        '--chat-id', chat_id,
+        '--message-type', 'interactive',
+        '--content', payload_json,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+        )
+        if result.returncode == 0:
+            print(f'✅ lark-cli 发送成功')
+            print(result.stdout)
+            return True
+        else:
+            print(f'error: lark-cli 发送失败', file=sys.stderr)
+            print(f'stderr: {result.stderr}', file=sys.stderr)
+            return False
+    except FileNotFoundError:
+        print('error: 找不到 lark-cli，请确保已安装', file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f'error: lark-cli 执行异常: {e}', file=sys.stderr)
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='飞书自定义机器人：interactive 卡片推送早报链接与 summary footer',
@@ -162,17 +202,21 @@ def main() -> int:
         help='Webhook；默认环境变量 FEISHU_BOT_WEBHOOK',
     )
     parser.add_argument(
+        '--lark-cli',
+        action='store_true',
+        help='使用 lark-cli 发送消息（需配合 --chat-id）',
+    )
+    parser.add_argument(
+        '--chat-id',
+        help='飞书群聊 ID（如 oc_xxx），配合 --lark-cli 使用',
+    )
+    parser.add_argument(
         '--summary-json',
         dest='summary_json',
         default=None,
         help='summary.json 路径；默认 output/<date>/summary.json',
     )
     args = parser.parse_args()
-
-    webhook = (args.webhook or '').strip()
-    if not webhook:
-        print('error: 请传入 --webhook 或设置环境变量 FEISHU_BOT_WEBHOOK', file=sys.stderr)
-        return 1
 
     paths = default_day_paths(args.date)
     summary_path = args.summary_json or paths['summary']
@@ -186,20 +230,33 @@ def main() -> int:
         print(f'error: 请求体约 {n} 字节，超过 20KB', file=sys.stderr)
         return 1
 
-    try:
-        out = _post_webhook(webhook, payload)
-    except urllib.error.HTTPError as e:
-        print(f'error: HTTP {e.code}', file=sys.stderr)
+    if args.lark_cli:
+        if not args.chat_id:
+            print('error: 使用 --lark-cli 时必须指定 --chat-id', file=sys.stderr)
+            return 1
+        if _send_via_lark_cli(args.chat_id, payload):
+            return 0
         return 1
-    except urllib.error.URLError as e:
-        print(f'error: {e.reason}', file=sys.stderr)
-        return 1
+    else:
+        webhook = (args.webhook or '').strip()
+        if not webhook:
+            print('error: 请传入 --webhook 或设置环境变量 FEISHU_BOT_WEBHOOK，或使用 --lark-cli', file=sys.stderr)
+            return 1
 
-    if out.get('code') != 0:
-        print(f'error: 飞书响应 {out}', file=sys.stderr)
-        return 1
-    print(json.dumps(out, ensure_ascii=False))
-    return 0
+        try:
+            out = _post_webhook(webhook, payload)
+        except urllib.error.HTTPError as e:
+            print(f'error: HTTP {e.code}', file=sys.stderr)
+            return 1
+        except urllib.error.URLError as e:
+            print(f'error: {e.reason}', file=sys.stderr)
+            return 1
+
+        if out.get('code') != 0:
+            print(f'error: 飞书响应 {out}', file=sys.stderr)
+            return 1
+        print(json.dumps(out, ensure_ascii=False))
+        return 0
 
 
 if __name__ == '__main__':

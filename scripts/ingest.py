@@ -376,6 +376,17 @@ def _guess_module(text, module_map):
     return 'unknown'
 
 
+def _contains_excluded_keywords(text: str, exclude_keywords: List[str]) -> bool:
+    """检查文本是否包含排除关键词（选题纠偏）"""
+    if not text:
+        return False
+    text_lower = text.lower()
+    for kw in exclude_keywords:
+        if kw.lower() in text_lower:
+            return True
+    return False
+
+
 def filter_items(items: List[Dict[str, Any]], _config: dict) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """步骤 2：关键词与 URL 规则粗筛（纯内存）。"""
     modules_data = load_assembly_config()
@@ -394,10 +405,15 @@ def filter_items(items: List[Dict[str, Any]], _config: dict) -> Tuple[List[Dict[
     url_patterns = sources_data.get('url_patterns') or {}
     allowed_patterns = url_patterns.get('allowed', [])
     forbidden_patterns = url_patterns.get('forbidden')
+    
+    # 选题纠偏：排除非 AI 核心内容的关键词
+    filter_keywords = sources_data.get('filter_keywords', {})
+    exclude_keywords = filter_keywords.get('exclude', [])
 
     passed_items: List[Dict[str, Any]] = []
     passed = 0
     total = len(items)
+    excluded_by_topic = 0
 
     for item in items:
         title = item.get('title', '')
@@ -410,12 +426,18 @@ def filter_items(items: List[Dict[str, Any]], _config: dict) -> Tuple[List[Dict[
             continue
 
         combined_text = f"{title} {item.get('summary', '')} {item.get('content', '')}"
+        
+        # 选题纠偏：剔除非 AI 核心内容
+        if exclude_keywords and _contains_excluded_keywords(combined_text, exclude_keywords):
+            excluded_by_topic += 1
+            continue
+
         if keyword_match(combined_text, all_keywords):
             item['_matched_module'] = _guess_module(combined_text, module_map)
             passed_items.append(item)
             passed += 1
 
-    stats = {'count': passed, 'total': total}
+    stats = {'count': passed, 'total': total, 'excluded_by_topic': excluded_by_topic}
     return passed_items, stats
 
 
@@ -579,25 +601,72 @@ def _rss_item_overlaps_recent(
     return False
 
 
+def _count_hot_topic_occurrences(
+    item: Dict[str, Any],
+    fingerprints: List[Dict[str, Any]],
+    dcfg: Dict[str, Any],
+) -> int:
+    """统计该条目在近几日热点中的出现次数（用于判断是否为连续热门）"""
+    if not fingerprints:
+        return 0
+    word_n = int(dcfg.get('word_ngram_n', 3))
+    char_n = int(dcfg.get('char_ngram_n', 3))
+    threshold = float(dcfg.get('hot_topic_repeat_threshold', 0.75))
+
+    title = (item.get('title') or '').strip()
+    outline = f'{title} {(item.get("summary") or "")}'.strip()[:_OUTLINE_FINGERPRINT_MAX_CHARS]
+    title_tok = similarity_tokens(title, word_n, char_n)
+    body_tok = similarity_tokens(outline, word_n, char_n)
+
+    count = 0
+    for fp in fingerprints:
+        if title_tok and fp.get('title_tok'):
+            if jaccard_similarity(title_tok, fp['title_tok']) >= threshold:
+                count += 1
+                continue
+        if body_tok and fp.get('body_tok'):
+            olen = int(fp.get('outline_len') or 0)
+            if olen >= _MIN_CHARS_FOR_BODY_DEDUP:
+                if jaccard_similarity(body_tok, fp['body_tok']) >= threshold:
+                    count += 1
+    return count
+
+
 def filter_recent_summary_overlap(
     items: List[Dict[str, Any]],
     ingest_date_str: str,
     dcfg: Dict[str, Any],
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """剔除与近几日 `output/.../summary.json` 已产出热点重复的条目（在篇内去重之后执行）。"""
+    """剔除与近几日 `output/.../summary.json` 已产出热点重复的条目（在篇内去重之后执行）。
+    
+    热点逻辑优化：如果一个话题在连续多日出现达到一定次数，视为持续热点，允许再次推送。
+    """
     fps, meta = load_recent_summary_fingerprints(ingest_date_str, dcfg)
     if not meta.get('enabled', True) or not fps:
         return items, {**meta, 'dropped': 0, 'kept': len(items)}
 
+    # 热点逻辑配置
+    hot_topic_enabled = dcfg.get('hot_topic_enabled', False)
+    hot_topic_days = int(dcfg.get('hot_topic_days', 3))
+    
     kept: List[Dict[str, Any]] = []
     dropped = 0
+    kept_as_hot = 0
+    
     for it in items:
         if _rss_item_overlaps_recent(it, fps, dcfg):
+            # 热点逻辑：如果是连续多日出现的热门话题，允许再次推送
+            if hot_topic_enabled:
+                occurrences = _count_hot_topic_occurrences(it, fps, dcfg)
+                if occurrences >= hot_topic_days:
+                    kept.append(it)
+                    kept_as_hot += 1
+                    continue
             dropped += 1
             continue
         kept.append(it)
 
-    return kept, {**meta, 'dropped': dropped, 'kept': len(kept)}
+    return kept, {**meta, 'dropped': dropped, 'kept': len(kept), 'kept_as_hot': kept_as_hot}
 
 
 def dedup_items(items: List[Dict[str, Any]], _config: dict) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:

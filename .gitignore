@@ -34,3 +34,15 @@ post-runbook.md
 *.tmp
 *.bak
 *.origin
+
+.agents
+.claude
+.codebuddy
+.continue
+.junie
+.kiro
+.qoder
+.qwen
+.trae
+skills
+skills-lock.json
