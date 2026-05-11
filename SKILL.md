@@ -101,28 +101,18 @@ lark-cli wiki nodes list --as user \
 
 ### 4.2 群机器人 Webhook 推送
 
-发布完成后必须向群内推送富文本通知：
+发布完成后必须向群内推送交互式卡片通知：
 
 ```bash
-WEBHOOK=$(cat config/secrets.json | python3 -c "import sys, json; print(json.load(sys.stdin)['feishu']['bot_webhook'])")
-
-curl -X POST "$WEBHOOK" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "msg_type": "post",
-    "content": {
-      "post": {
-        "zh_cn": {
-          "title": "早报：AI 前沿日报（YYYY-MM-DD）",
-          "content": [
-            [{"tag": "text", "text": "今日 AI 前沿早报已发布，"}],
-            [{"tag": "a", "text": "点击查看详情", "href": "https://xxx.feishu.cn/…"}]
-          ]
-        }
-      }
-    }
-  }'
+cd /Users/huangxingbiao/.qclaw/skills/ai-frontier-daily
+python3 project-space/push_feishu_bot.py \
+  --date "YYYY-MM-DD" \
+  --doc-url "https://xxx.feishu.cn/…"
 ```
+
+**说明**：
+- 从 `config/secrets.json` 的 `feishu.bot_webhook` 字段自动读取 Webhook
+- 推送内容包含早报标题、各模块摘要（来自 `summary.json`）和「立即查看」按钮
 
 ---
 
@@ -177,7 +167,7 @@ curl -X POST "$WEBHOOK" \
 | 发布后流程（含 Webhook、知识库发布） | `extension/post-runbook.md` |
 | RSS 来源、模块、去重策略 | `project-space/config/config.json` |
 | LLM API（Key/BaseUrl/Model）| `config/secrets.json` |
-| Webhook | `config/secrets.json` |
+| Webhook | `config/secrets.json` → `project-space/push_feishu_bot.py` |
 | 知识库发布目标 | 大模型根据对话上下文自行判断 |
 | 筛选排序提示词 | `project-space/prompts/filter_ranker.md.j2` |
 | 摘要提示词 | `project-space/prompts/summarizer.md.j2` |
