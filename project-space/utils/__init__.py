@@ -6,7 +6,9 @@ from utils.llm_client import LLMClient, call_llm, call_llm_json
 from utils.base_config import (
     CONFIG_JSON,
     FN_BRIEFING,
+    FN_FILTERED_RANKED,
     FN_INGESTED,
+    FN_RAW_FETCHED,
     FN_SUMMARY,
     PROJECT_ROOT,
     PROMPTS_DIR,
@@ -38,7 +40,9 @@ __all__ = [
     "CONFIG_JSON",
     "SECRETS_JSON",
     # 文件名
+    "FN_RAW_FETCHED",
     "FN_INGESTED",
+    "FN_FILTERED_RANKED",
     "FN_SUMMARY",
     "FN_BRIEFING",
     # 路径函数

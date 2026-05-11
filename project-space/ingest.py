@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ingest.py — RSS 抓取、关键词粗筛、去重模块
+ingest.py — RSS 抓取、去重模块、关键词粗筛
 """
 
 from __future__ import annotations
@@ -63,28 +63,22 @@ class IngestModule(BaseModule):
             return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo else dt
         except Exception:
             pass
-        for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S'):
-            try:
-                return datetime.strptime(text[:19], fmt)
-            except ValueError:
-                continue
-        return None
+        try:
+            return datetime.strptime(text[:19], '%Y-%m-%dT%H:%M:%S')
+        except ValueError:
+            pass
+        try:
+            return datetime.strptime(text[:19], '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            return None
 
     def _fetch(self, url: str, headers: dict, timeout: float, retries: int, backoff: float, verify: bool) -> Optional[bytes]:
-        if requests is None:
-            raise ImportError('需要安装 requests: pip install requests')
-        if not verify:
-            try:
-                import urllib3
-                urllib3.disable_warnings()
-            except Exception:
-                pass
         for attempt in range(retries):
             try:
                 resp = requests.get(url, headers=headers, timeout=timeout, verify=verify)
                 resp.raise_for_status()
                 return resp.content
-            except requests.exceptions.RequestException:
+            except Exception:
                 if attempt < retries - 1:
                     time.sleep(backoff * (attempt + 1))
         return None
@@ -96,7 +90,6 @@ class IngestModule(BaseModule):
             root = ET.fromstring(xml_bytes)
         except ET.ParseError:
             return items
-
         root_tag = self._local_tag(root.tag)
         for elem in root.iter():
             tag = self._local_tag(elem.tag)
@@ -207,39 +200,6 @@ class IngestModule(BaseModule):
         }
         return all_items, meta
 
-    def filter(self, items: List[dict]) -> Tuple[List[dict], dict]:
-        """关键词粗筛"""
-        modules_data = load_assembly_config()
-        sources_data = load_sources_config()
-
-        keywords, module_map = [], {}
-        for m in modules_data.get('modules', []):
-            for kw in m.get('keywords', []):
-                keywords.append(kw.lower())
-                if kw.lower() not in module_map:
-                    module_map[kw.lower()] = m['id']
-
-        excluded = sources_data.get('excluded', [])
-        url_patterns = sources_data.get('url_patterns', {})
-        allowed = url_patterns.get('allowed', [])
-        forbidden = url_patterns.get('forbidden') or self.DEFAULT_FORBIDDEN
-
-        passed = []
-        for it in items:
-            url = it.get('url', '')
-            if any(d in url for d in excluded):
-                continue
-            if not any(p in url for p in allowed) or any(f in url for f in forbidden):
-                continue
-
-            text = f"{it.get('title', '')} {it.get('summary', '')}".lower()
-            matched = [kw for kw in keywords if kw in text]
-            if matched:
-                it['_matched_module'] = module_map.get(matched[0], 'unknown')
-                passed.append(it)
-
-        return passed, {'count': len(passed), 'total': len(items)}
-
     def dedup(self, items: List[dict]) -> Tuple[List[dict], dict]:
         """去重（URL + 标题相似度）"""
         cfg = load_dedup_config()
@@ -269,7 +229,12 @@ class IngestModule(BaseModule):
         return passed, {'count': len(passed)}
 
     def dedup_recent(self, items: List[dict]) -> Tuple[List[dict], dict]:
-        """与近几日 summary 去重"""
+        """与近几日 summary 去重
+
+        规则：
+        - 近几日频繁出现的新闻视为重复（剔除）
+        - 但连续/累计出现 4+ 天的新闻视为持续热点，保留
+        """
         cfg = load_dedup_config()
         if not cfg.get('recent_summary_enabled', True):
             return items, {'enabled': False, 'dropped': 0}
@@ -279,10 +244,13 @@ class IngestModule(BaseModule):
         char_n = int(cfg['char_ngram_n'])
         title_thresh = float(cfg['recent_summary_title_threshold'])
         body_thresh = float(cfg['recent_summary_text_threshold'])
+        # 持续热点阈值：出现天数 >= 4 则保留
+        persistent_days_threshold = int(cfg.get('persistent_days_threshold', 4))
 
-        # 加载历史指纹
+        # 加载历史指纹：每条指纹关联其出现的日期索引
         base = datetime.strptime(self.date_str, '%Y-%m-%d')
-        fingerprints = []
+        fingerprints_by_day = {}  # day_index -> [fingerprints]
+
         for i in range(1, n_days + 1):
             d = (base - timedelta(days=i)).strftime('%Y-%m-%d')
             path = output_dir_for_date(d) / FN_SUMMARY
@@ -291,24 +259,26 @@ class IngestModule(BaseModule):
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                day_fps = []
                 for it in data.get('items', []):
                     title = (it.get('title') or '').strip()
                     outline = ' '.join(x for x in [
                         it.get('title'), it.get('summary'), it.get('one_liner'),
                         it.get('plain_explain'), it.get('digest_for_outline')
                     ] if x)[:self.OUTLINE_FINGERPRINT_MAX_CHARS]
-                    fingerprints.append({
+                    day_fps.append({
                         'url_norm': self._norm_url(it.get('url')),
                         'title_tok': self.similarity_tokens(title, word_n, char_n),
                         'body_tok': self.similarity_tokens(outline, word_n, char_n),
                     })
+                fingerprints_by_day[i] = day_fps
             except Exception:
                 continue
 
-        if not fingerprints:
+        if not fingerprints_by_day:
             return items, {'enabled': True, 'dropped': 0}
 
-        # 去重
+        # 去重：统计匹配到的历史指纹来自多少天
         kept, dropped = [], 0
         for it in items:
             url = self._norm_url(it.get('url'))
@@ -317,22 +287,30 @@ class IngestModule(BaseModule):
             title_tok = self.similarity_tokens(title, word_n, char_n)
             body_tok = self.similarity_tokens(outline, word_n, char_n)
 
-            is_dup = False
-            for fp in fingerprints:
-                if url and fp['url_norm'] and url == fp['url_norm']:
-                    is_dup = True
-                    break
-                if title_tok and fp['title_tok'] and self.jaccard_similarity(title_tok, fp['title_tok']) >= title_thresh:
-                    is_dup = True
-                    break
-                if len(outline) >= 48 and body_tok and fp['body_tok'] and self.jaccard_similarity(body_tok, fp['body_tok']) >= body_thresh:
-                    is_dup = True
-                    break
+            # 收集匹配到的日期索引
+            matched_days = set()
+            for day_idx, day_fps in fingerprints_by_day.items():
+                for fp in day_fps:
+                    # URL 完全匹配
+                    if url and fp['url_norm'] and url == fp['url_norm']:
+                        matched_days.add(day_idx)
+                        break
+                    # 标题相似度匹配
+                    if title_tok and fp['title_tok'] and self.jaccard_similarity(title_tok, fp['title_tok']) >= title_thresh:
+                        matched_days.add(day_idx)
+                        break
+                    # 正文相似度匹配
+                    if len(outline) >= 48 and body_tok and fp['body_tok'] and self.jaccard_similarity(body_tok, fp['body_tok']) >= body_thresh:
+                        matched_days.add(day_idx)
+                        break
 
-            if is_dup:
-                dropped += 1
+            # 判断：出现天数 >= 阈值则为持续热点，保留；否则剔除
+            if len(matched_days) >= persistent_days_threshold:
+                kept.append(it)  # 持续热点，保留
+            elif len(matched_days) > 0:
+                dropped += 1  # 有重复但不够持久，剔除
             else:
-                kept.append(it)
+                kept.append(it)  # 无重复，保留
 
         return kept, {'enabled': True, 'dropped': dropped}
 
@@ -354,8 +332,8 @@ class IngestModule(BaseModule):
     def run(self, output_file: str) -> dict:
         """执行完整流程"""
         raw_items, crawl_meta = self.fetch()
-        filtered, filter_meta = self.filter(raw_items)
-        deduped, dedup_meta = self.dedup(filtered)
+
+        deduped, dedup_meta = self.dedup(raw_items)
         final, recent_meta = self.dedup_recent(deduped)
 
         self.save_jsonl(output_file, final)
@@ -363,7 +341,6 @@ class IngestModule(BaseModule):
         return {
             'count': len(final),
             'crawl': crawl_meta,
-            'filter': filter_meta,
             'dedup': dedup_meta,
             'recent_summary_dedup': recent_meta,
         }

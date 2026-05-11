@@ -15,7 +15,9 @@ SECRETS_JSON = PROJECT_ROOT / 'config' / 'secrets.json'
 CONFIG_JSON = CONFIG_DIR / 'config.json'
 
 # 输出文件名
+FN_RAW_FETCHED = 'raw_fetched.jsonl'
 FN_INGESTED = 'ingested.jsonl'
+FN_FILTERED_RANKED = 'filtered_ranked.json'
 FN_SUMMARY = 'summary.json'
 FN_BRIEFING = 'briefing.md'
 
@@ -30,6 +32,7 @@ def default_day_paths(date_str: str) -> dict:
     return {
         'dir': d,
         'ingested': d / FN_INGESTED,
+        'filtered': d / FN_FILTERED_RANKED,
         'summary': d / FN_SUMMARY,
         'briefing': d / FN_BRIEFING,
     }
@@ -96,6 +99,7 @@ def load_dedup_config() -> dict:
         'recent_summary_enabled': True,
         'recent_summary_days': 7,
         'recent_summary_text_threshold': 0.38,
+        'persistent_days_threshold': 4,  # 持续热点阈值：出现 >=4 天则保留
     }
     cfg = load_config().get('dedup') or {}
     defaults.update(cfg)

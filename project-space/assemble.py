@@ -6,219 +6,116 @@ assemble.py — 拼版渲染模块
 
 from __future__ import annotations
 
+import json
 import os
-import re
 from datetime import datetime
-from email.utils import parsedate_to_datetime
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import List
 
-from utils import load_assembly_config, load_sources_config
+from jinja2 import Environment, FileSystemLoader
+
+from utils import load_assembly_config
 from utils.base import BaseModule
-
-try:
-    from jinja2 import Environment, FileSystemLoader
-except ImportError:
-    Environment = None
-    FileSystemLoader = None
 
 
 class AssembleModule(BaseModule):
     """拼版渲染"""
 
     TEMPLATE = 'briefing-template.md.j2'
-    PLACEHOLDER = '（待补）'
 
     def __init__(self, date_str: str):
         super().__init__(date_str, 'assemble')
-        self.cfg = None
-        self.modules = None
-        self.max_per = 8
-        self.summary_cap = 320
-
-        from pathlib import Path
-        project_root = Path(__file__).resolve().parent
-        self.templates_dir = project_root / 'config'
-
-    def _load(self):
-        """加载配置"""
-        if self.cfg:
-            return
         self.cfg = load_assembly_config()
-        self.modules = [
-            {'id': m['id'], 'name': m['name'], 'abbrev': m.get('abbrev', m['id'])}
-            for m in self.cfg.get('modules', [])
-        ]
-        self.max_per = max(1, int(self.cfg.get('max_news_per_module', 8)))
-        self.summary_cap = max(200, int(self.cfg.get('summary_max_chars', 320)))
+        self.modules = [{'id': m['id'], 'name': m['name'], 'abbrev': m.get('abbrev', m['id'])}
+                        for m in self.cfg.get('modules', [])]
+        self.templates_dir = Path(__file__).resolve().parent / 'config'
 
-    def _parse_time(self, it: dict) -> datetime:
-        """解析发布时间"""
-        raw = str(it.get('pub_time') or it.get('pub_time_raw') or '').strip()
-        if not raw:
-            return datetime.min
-        for cand in (raw, raw.replace('Z', '+00:00')):
-            try:
-                dt = datetime.fromisoformat(cand)
-                return dt.replace(tzinfo=None) if dt.tzinfo else dt
-            except ValueError:
-                continue
-        for fmt in ('%Y-%m-%d %H:%M:%S',):
-            try:
-                return datetime.strptime(raw[:19], fmt)
-            except ValueError:
-                continue
-        try:
-            dt = parsedate_to_datetime(raw)
-            return dt.replace(tzinfo=None) if dt.tzinfo else dt
-        except Exception:
-            pass
-        m = re.match(r'(\d{4}-\d{2}-\d{2})', raw)
-        if m:
-            try:
-                return datetime.strptime(m.group(1), '%Y-%m-%d')
-            except ValueError:
-                pass
-        return datetime.min
+    def _load_items(self, input_file: str) -> tuple:
+        """加载 items 和 blocks"""
+        data = self.load_json(input_file)
+        if data is not None:
+            return data.get('items', []), data.get('blocks', {})
+        return self.load_jsonl(input_file), {}
 
-    def _sort(self, items: List[dict]) -> List[dict]:
-        """按时间排序"""
-        return sorted(items, key=self._parse_time, reverse=True)
-
-    def _news_row(self, number: str, it: dict) -> dict:
+    def _news_row(self, number: str, it: dict, cap: int) -> dict:
         """生成新闻行数据"""
         title = it.get('title', '')
-        title_disp = self.clip_text(title, 100)
-
-        # 摘要文本：优先使用 LLM 生成的 digest_for_outline
-        raw = (it.get('digest_for_outline') or it.get('_ai_summary') or it.get('summary', '')).strip()
-        if raw and not self.is_placeholder(raw):
-            summary = raw[:self.summary_cap]
-        else:
-            # 降级方案：拼接 headline 和 plain_explain
-            parts = [it.get('headline'), it.get('plain_explain')]
-            stitched = ' '.join(str(p).strip() for p in parts if p and str(p).strip())
-            summary = stitched[:self.summary_cap] if stitched else (it.get('summary', '')[:self.summary_cap] or self.PLACEHOLDER)
-
-        def field(k: str, fb: str = '') -> str:
-            v = it.get(k)
-            return str(v).strip() if v and str(v).strip() else (fb[:200] if fb else self.PLACEHOLDER)
-
-        # headline 降级：如果没有则用 title，再没有则用 digest 截断
-        headline = field('headline', title_disp if title_disp else summary[:50])
-        tag = field('tag', '其他')
+        summary = (it.get('digest_for_outline') or it.get('summary', ''))[:cap]
 
         return {
             'number': number,
-            'headline': headline,
-            'tag': tag,
-            'link_label': f"{it.get('source', '')}：{title}" if it.get('source') or title else self.PLACEHOLDER,
+            'headline': it.get('headline', title)[:100],
+            'tag': it.get('tag', '其他'),
+            'link_label': f"{it.get('source', '')}：{title}" if title else '（无标题）',
             'url': it.get('url') or '#',
             'summary': summary,
-            'plain_explain': field('plain_explain'),
-            'impact_1': field('impact_1'),
-            'impact_2': field('impact_2'),
+            'plain_explain': it.get('plain_explain', ''),
+            'impact_1': it.get('impact_1', ''),
+            'impact_2': it.get('impact_2', ''),
         }
 
-    def _group(self, items: List[dict]) -> Dict[str, List[dict]]:
-        """按模块分组"""
-        ids = [m['id'] for m in self.modules]
-        groups = {mid: [] for mid in ids}
-        groups['unknown'] = []
+    def _group_items(self, items: List[dict]) -> dict:
+        """按 sub_topic 分组"""
+        topic_to_module = {
+            '大模型': 'model',
+            'AI硬件': 'hardware',
+            '行业应用': 'application',
+            '投融资': 'investment',
+            '政策监管': 'policy',
+        }
+
+        groups = {m['id']: [] for m in self.modules}
         for it in items:
-            mid = it.get('_matched_module', 'unknown')
-            groups[mid if mid in ids else 'unknown'].append(it)
+            sub_topic = it.get('sub_topic', '')
+            mid = topic_to_module.get(sub_topic, 'unknown')
+            if mid in groups:
+                groups[mid].append(it)
+
         return groups
 
-    def _build_context(self, items: List[dict], blocks: Optional[dict]) -> dict:
+    def _build_context(self, items: List[dict], blocks: dict) -> dict:
         """构建渲染上下文"""
-        self._load()
-        groups = self._group(items)
+        groups = self._group_items(items)
+        cap = max(200, int(self.cfg.get('summary_max_chars', 320)))
 
         # header
-        sources = load_sources_config()
-        tier1 = sources.get('tier1', [])[:6]
-        header_fallback = ' · '.join(tier1)
-        h = blocks.get('header', {}) if blocks else {}
         header = {
             'date_str': self.date_str,
             'coverage_line': self.cfg.get('header_coverage', '硬件芯片 · 模型 · AI工程 · 产业商业 · 政策地缘'),
-            'sources_str': (h.get('data_sources') or '').strip() or header_fallback,
-            'header_tag': (h.get('tags_full') or '').strip() or '#AI早报',
+            'sources_str': blocks.get('header', {}).get('data_sources', '多家媒体'),
+            'header_tag': blocks.get('header', {}).get('tags_full', '#AI早报'),
             'header_status': '已归档',
         }
 
         # sections
         sections = []
-        section_idx = 1
-        for m in self.modules:
-            mid = m['id']
-            mod_items = self._sort(groups[mid])[:self.max_per]
-            entries = []
-            for i, it in enumerate(mod_items):
-                number = f"{section_idx}.{i + 1}"
-                entries.append(self._news_row(number, it))
-            sections.append({
-                'heading': f"## {m['name']}\n",
-                'empty': not mod_items,
-                'entries': entries
-            })
-            section_idx += 1
-
-        # unknown
-        unk_items = self._sort(groups.get('unknown', []))[:self.max_per]
-        if unk_items:
-            unk_entries = []
-            for i, it in enumerate(unk_items):
-                number = f"6.{i + 1}"  # 未分类固定为第6节
-                unk_entries.append(self._news_row(number, it))
-            unknown = {'entries': unk_entries}
-        else:
-            unknown = None
+        for i, m in enumerate(self.modules, 1):
+            mod_items = groups.get(m['id'], [])[:8]  # 每模块最多8条
+            entries = [self._news_row(f"{i}.{j+1}", it, cap) for j, it in enumerate(mod_items)]
+            sections.append({'heading': f"## {m['name']}\n", 'empty': not mod_items, 'entries': entries})
 
         # footer
-        if blocks and blocks.get('footer'):
-            fd = blocks['footer']
-            abbrevs = {m['id']: m['abbrev'] for m in self.modules}
-            rows = []
-            for m in self.modules:
-                raw = fd.get(m['id'])
-                lines = [self.clip_text(ln, 320) for ln in str(raw or '').splitlines() if ln.strip()] if raw else []
-                rows.append({'abbrev': abbrevs[m['id']], 'lines': lines or ['今日暂无相关报道']})
-            footer = {'mode': 'blocks', 'rows': rows}
-        else:
-            abbrevs = {m['id']: m['abbrev'] for m in self.modules}
-            lines = ['> **今日速览（一句话版）：**', '>']
-            for m in self.modules:
-                n = len(self._sort(groups[m['id']])[:self.max_per])
-                lines.append(f"> **{abbrevs[m['id']]}：** 本模块收录 {n} 条。")
-            if unk_items:
-                lines.append(f"> **其他：** 未分类 {len(unk_items)} 条。")
-            footer = {'mode': 'fallback', 'fallback_lines': lines}
+        footer_rows = []
+        for m in self.modules:
+            raw = blocks.get('footer', {}).get(m['id'], '')
+            lines = [ln.strip() for ln in str(raw).splitlines() if ln.strip()][:3]
+            footer_rows.append({'abbrev': m['abbrev'], 'lines': lines or ['今日暂无相关报道']})
 
-        ctx = {'header': header, 'sections': sections, 'footer': footer}
-        if unknown:
-            ctx['unknown'] = unknown
-        return ctx
+        return {
+            'header': header,
+            'sections': sections,
+            'footer': {'mode': 'blocks', 'rows': footer_rows}
+        }
 
     def run(self, input_file: str, output_file: str) -> dict:
         """执行完整流程"""
-        self._load()
+        items, blocks = self._load_items(input_file)
 
-        # 读取数据
-        with open(input_file, 'r', encoding='utf-8') as f:
-            raw = f.read().strip()
-
-        if raw.startswith('{'):
-            data = json.loads(raw)
-            items, blocks = list(data.get('items', [])), data.get('blocks')
-        else:
-            items = [json.loads(line) for line in raw.splitlines() if line.strip()]
-            blocks = None
+        if not items:
+            self.save_json(output_file, {'items': [], 'blocks': {}})
+            return {'path': output_file, 'count': 0}
 
         # 渲染
-        if Environment is None or FileSystemLoader is None:
-            raise ImportError('需要安装 jinja2: pip install jinja2')
-
         ctx = self._build_context(items, blocks)
         env = Environment(loader=FileSystemLoader(self.templates_dir), autoescape=False)
         tpl = env.get_template(self.TEMPLATE)
@@ -233,9 +130,5 @@ class AssembleModule(BaseModule):
 
 
 # 向后兼容
-def run_assemble(input_file: str, output_file: str, date_str: str, _config=None) -> dict:
+def run_assemble(input_file: str, output_file: str, date_str: str) -> dict:
     return AssembleModule(date_str).run(input_file, output_file)
-
-
-# 延迟导入 json
-import json
