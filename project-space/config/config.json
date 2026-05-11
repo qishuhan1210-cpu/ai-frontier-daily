@@ -1,10 +1,15 @@
 {
+  "output": {
+    "time_window_hours": 72,
+    "max_records": 1000,
+    "timezone_offset": 8
+  },
   "public_feeds": {
     "settings": {
       "timeout_seconds": 20,
       "max_retries": 3,
-      "max_items_per_feed": 50,
-      "max_items_total": 800,
+      "max_items_per_feed": 100,
+      "max_items_total": 1000,
       "user_agent": "Mozilla/5.0 (compatible; AIFrontierDaily/1.0; +https://github.com/YOUR_GITHUB_OR_USER/ai-frontier-daily) AppleWebKit/537.36 (KHTML, like Gecko)",
       "retry_backoff_seconds": 1.5
     },
@@ -20,13 +25,13 @@
     ]
   },
   "dedup": {
-    "title_similarity_threshold": 0.85,
+    "title_similarity_threshold": 0.88,
     "word_ngram_n": 3,
     "char_ngram_n": 3,
     "recent_summary_enabled": true,
-    "recent_summary_days": 7,
-    "recent_summary_title_threshold": 0.82,
-    "recent_summary_text_threshold": 0.38,
+    "recent_summary_days": 3,
+    "recent_summary_title_threshold": 0.90,
+    "recent_summary_text_threshold": 0.45,
     "hot_topic_enabled": true,
     "hot_topic_days": 3,
     "hot_topic_repeat_threshold": 0.75
@@ -52,7 +57,14 @@
       "baidu.com/s",
       "mp.weixin.qq.com",
       "donews.com",
-      "baijiahao.baidu.com"
+      "baijiahao.baidu.com",
+      "基金净值",
+      "基金排名",
+      "纯电车 unrelated",
+      "手机壳配件",
+      "游戏皮肤",
+      "游戏道具",
+      "娱乐八卦"
     ],
     "url_patterns": {
       "allowed": ["/detail/", "/p/", "/newsDetail_", "/article/", "/info/", "/a/"],
@@ -84,42 +96,47 @@
     }
   },
   "assembly": {
-    "header_coverage": "硬件芯片 · 模型 · AI工程 · 产业商业 · 政策地缘",
+    "header_coverage": "大模型 · AI硬件 · 行业应用 · 投融资 · 政策监管",
     "modules": [
-      {
-        "id": "hardware",
-        "abbrev": "硬件",
-        "name": "一、硬件 · 芯片",
-        "keywords": ["GPU", "TPU", "ASIC", "芯片", "英伟达", "NVIDIA", "AMD", "Intel", "服务器", "液冷", "存储", "PCB", "载板", "数据中心", "算力", "H100", "H200", "B200", "GPU集群", "AI芯片"]
-      },
       {
         "id": "model",
         "abbrev": "模型",
-        "name": "二、模型",
-        "keywords": ["大模型", "GPT", "Claude", "Gemini", "DeepSeek", "Qwen", "Llama", "开源模型", "闭源", "多模态", "能力评测", "参数", "AGI", "Scaling Law", "o1", "o3", "Grok", "豆包", "Kimi", "GLM", "通义千问", "智谱"]
+        "name": "一、大模型",
+        "sub_topic": "大模型",
+        "keywords": ["大模型", "GPT", "Claude", "Gemini", "DeepSeek", "Qwen", "Llama", "开源模型", "闭源", "多模态", "能力评测", "参数", "AGI", "Scaling Law", "o1", "o3", "Grok", "豆包", "Kimi", "GLM", "通义千问", "智谱", "基础模型", "预训练", "对齐", "RLHF"]
       },
       {
-        "id": "ai_engineering",
-        "abbrev": "工程",
-        "name": "三、AI 工程 · Agent",
-        "keywords": ["Agent", "MCP", "Function Calling", "RAG", "Fine-tuning", "推理部署", "Token", "AI编程", "Cursor", "Copilot", "Codex", "Devin", "Claude Code", "工作流", "自动化", "工具调用", "Tool Use", "A2A", "MCP协议", "Ollama", "vLLM", "SGLang", "推理加速", "蒸馏", "量化"]
+        "id": "hardware",
+        "abbrev": "硬件",
+        "name": "二、AI硬件",
+        "sub_topic": "AI硬件",
+        "keywords": ["GPU", "TPU", "ASIC", "芯片", "英伟达", "NVIDIA", "AMD", "Intel", "服务器", "液冷", "存储", "PCB", "载板", "数据中心", "算力", "H100", "H200", "B200", "GPU集群", "AI芯片", "昇腾", "寒武纪", "推理卡", "训练集群"]
       },
       {
-        "id": "industry",
-        "abbrev": "商业",
-        "name": "四、产业 · 商业",
-        "keywords": ["融资", "并购", "IPO", "上市", "投资", "估值", "独角兽", "财报", "营收", "商业化", "落地", "企业AI", "裁员", "招聘", "薪资", "OpenAI", "Google", "Microsoft", "Meta", "Apple", "字节跳动", "阿里", "腾讯", "百度", "华为", "小米"]
+        "id": "application",
+        "abbrev": "应用",
+        "name": "三、行业应用",
+        "sub_topic": "行业应用",
+        "keywords": ["自动驾驶", "医疗AI", "金融AI", "教育AI", "内容生成", "企业级AI", "AI落地", "智能客服", "推荐系统", "CV", "NLP", "语音", "视频生成", "数字人", "AIGC", "AI搜索", "智能体", "Agent应用", "机器人"]
+      },
+      {
+        "id": "investment",
+        "abbrev": "投融资",
+        "name": "四、投融资",
+        "sub_topic": "投融资",
+        "keywords": ["融资", "并购", "IPO", "上市", "投资", "估值", "独角兽", "财报", "营收", "商业化", "估值变动", "投资布局", "VC", "PE", "天使轮", "A轮", "B轮", "C轮"]
       },
       {
         "id": "policy",
         "abbrev": "政策",
-        "name": "五、政策 · 地缘",
-        "keywords": ["政策", "法规", "监管", "数据安全", "算法推荐", "生成式AI", "美国禁令", "出口管制", "芯片封锁", "实体清单", "外资审查", "AI安全", "伦理", "治理", "中国AI", "欧盟AI法案", "GDPR", "美国AI战略", "AI军备竞赛"]
+        "name": "五、政策监管",
+        "sub_topic": "政策监管",
+        "keywords": ["政策", "法规", "监管", "数据安全", "算法推荐", "生成式AI", "美国禁令", "出口管制", "芯片封锁", "实体清单", "外资审查", "AI安全", "伦理", "治理", "中国AI", "欧盟AI法案", "GDPR", "美国AI战略", "AI军备竞赛", "合规"]
       }
     ],
     "time_window_hours": 48,
     "max_news_per_module": 8,
-    "summary_max_chars": 320,
+    "summary_max_chars": 500,
     "summary_unified_max_items": 120,
     "summary_unified_item_max_chars": 1800
   }

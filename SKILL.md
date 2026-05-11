@@ -1,203 +1,210 @@
 ---
-
-## name: ai-frontier-daily
+name: ai-frontier-daily
 description: >-
-  每日 AI 前沿早报流水线：脚本产出 output/<日期>/agenda.md；Agent 负责编排执行；agenda 生成后的飞书发布、必做 Webhook 与回传见 post-runbook.md（可由 post-runbook.example.md 复制）。
-  触发示例：「前沿早报」「每日 AI 早报」「刷新早报」、指定日期补跑、cron。
+  每日 AI 前沿早报流水线：自动采集 RSS → LLM 摘要 → 渲染早报 Markdown → 飞书发布 + 群机器人 Webhook。
+  这是一个定时任务 Skill，通过 cron 自动执行，无需用户主动触发。
 disable-model-invocation: true
+---
 
-# AI 前沿早报（Agent 执行手册）
+# AI 前沿早报（执行手册）
 
-本 Skill 描述 **Agent 与本仓库脚本如何配合**：脚本做确定性采集与生成；**早报正文不由 Chat 里当场撰写**，而是由 `summarize` 按提示词协议调用 LLM 后写入产物。**你的职责**主要是：在用户对应用触发时 **执行流水线**；当 `**agenda.md` 已成功生成** 后，再按 `**[post-runbook.md](post-runbook.md)`**（若无则从 `**[post-runbook.example.md](post-runbook.example.md)**` 复制并本地化）做发布前阅读、飞书发布、**必做的** Webhook 推送与用户回传。
+## 1. 何时启用 / 何时不用
+
+| 场景 | 处理方式 |
+|------|----------|
+| **每日定时运行** | 不需要 Agent 介入，cron 自动执行 |
+| **异常排查** | 日志显示失败，需 Agent 介入检查 |
+| **指定日期补跑** | 用户说「重跑5月9日」，Agent 介入执行 |
+| **手动撰写早报** | ❌ 不支持，内容由脚本生成 |
+| **非 AI 类新闻汇总** | ❌ 不支持，本流水线仅处理 AI 前沿 |
 
 ---
 
-## 1. 分工（必要性）
+## 2. 执行命令
 
-
-| 层级        | 做什么                                                                                                                           | 不必做什么                        |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| **脚本**    | RSS → 粗筛 → 篇内去重 → **与近 N 日已产出 `summary.json` 对照剔除重复热点**（默认 N=7，见 `engineering.json` → `dedup`）→ LLM 摘要 → Jinja 渲染 `agenda.md` | —                            |
-| **Agent** | `cd` 到仓库、运行编排命令、检查产物；`agenda.md` 产出后按 `**[post-runbook.md](post-runbook.md)`** 读终稿、飞书发布与 Webhook、回传链接                         | 不要用对话凭空重写一整份早报代替 `agenda.md` |
-
-
-**原则：** 内容与结构以 `**output/<DATE>/agenda.md`** 为准；除非脚本失败且用户明确要求手工整理，否则不要绕过流水线杜撰终稿。
-
----
-
-## 2. 一键执行（主路径）
-
-在仓库根目录用虚拟环境 Python 调用编排入口（默认跑全天：`ingest` → `summarize` → `assemble`）。
-
-
-| 变量          | 含义                                                         |
-| ----------- | ---------------------------------------------------------- |
-| `SKILL_DIR` | 本Skill对应仓库根目录（示例：`/path/to/ai-frontier-daily`，请替换为你本机实际路径） |
-| `DATE`      | `YYYY-MM-DD`，默认当天                                          |
-
+### 2.1 一键执行（正常流程）
 
 ```bash
-cd "$SKILL_DIR"
-.venv/bin/python3 scripts/daily_ai_frontier.py --date "$DATE"
+cd /Users/huangxingbiao/.qclaw/skills/ai-frontier-daily
+python3 project-space/pipeline.py --date "YYYY-MM-DD"
 ```
 
-- `**--steps**`：默认 `all`。排错时可只跑部分，例如 `ingest`、`ingest,summarize`（逗号分隔）。
+- 默认执行全部步骤：`ingest` → `filter_rank` → `summarize` → `assemble`
+- 产物路径：`output/<DATE>/briefing.md`
 
-成功后终稿路径：
-
-```text
-$SKILL_DIR/output/$DATE/agenda.md
-```
-
-成功产出后的具体操作（必读终稿、飞书、回传链接）见 `**[post-runbook.md](post-runbook.md)**`；本文件 **§5** 为同主题入口表。仓库内可入库的模板为 `**[post-runbook.example.md](post-runbook.example.md)`**。
-
----
-
-## 3. 分步执行（排错）
+### 2.2 分步执行（排错）
 
 ```bash
-cd "$SKILL_DIR"
-.venv/bin/python3 scripts/ingest.py       --date "$DATE"
-.venv/bin/python3 scripts/summarize.py    --date "$DATE"
-.venv/bin/python3 scripts/assemble.py     --date "$DATE"
+cd /Users/huangxingbiao/.qclaw/skills/ai-frontier-daily
+python3 project-space/pipeline.py --steps ingest
+python3 project-space/pipeline.py --steps filter_rank
+python3 project-space/pipeline.py --steps summarize
+python3 project-space/pipeline.py --steps assemble
 ```
 
-`summarize` 依赖 `kit/config.json` 中的 LLM 配置；失败时先查密钥与网络，再重跑。
-
----
-
-## 4. 产物说明（读什么）
-
-
-| 文件                             | 是否必读  | 说明                         |
-| ------------------------------ | ----- | -------------------------- |
-| `**output/<DATE>/agenda.md**`  | **是** | 对外发布的 Markdown 终稿          |
-| `output/<DATE>/summary.json`   | 一般否   | LLM 合并结果与 `blocks`；排错或抽检时用 |
-| `output/<DATE>/ingested.jsonl` | 一般否   | 抓取与粗筛后的条目                  |
-
-
-### ingest：与近 7 日已产出热点的去重（filter）
-
-`ingest.py` 在 **篇内去重之后**，会读取 **ingest 日当天之前、连续 N 个日历日** 的 `output/<YYYY-MM-DD>/summary.json`（文件存在才载入），为其中 `items` 构造指纹，并与当日 RSS 条目比对：**URL 归一化一致**，或 **标题** / **正文** n-gram Jaccard 超过阈值则视为重复热点并 **剔除**，避免连续多日推送同一题材。
-
-- **N（对照窗口）**：`kit/engineering.json` → `**dedup.recent_summary_days`**（默认 **7**）。与 **§5「`output/` 历史清理」** 保留近 7 天搭配时，本地仍会保留用于对照的 `summary.json`。
-- **关闭**：`dedup.recent_summary_enabled` 设为 `false`。
-- **调参**：`recent_summary_title_threshold`、`recent_summary_text_threshold` 与同文件 `dedup` 下篇内去重共用 `word_ngram_n` / `char_ngram_n`。
-
----
-
-## 5. Post-agenda runbook（`agenda.md` 已生成后）
-
-流水线已成功写出 `**output/<DATE>/agenda.md`** 时，从这里继续：
-
-
-| 内容                                            | 文档                                                       |
-| --------------------------------------------- | -------------------------------------------------------- |
-| 发布前读终稿、飞书四步、**必做 Webhook**、回传链接（个人环境专用，默认不入库） | `**[post-runbook.md](post-runbook.md)`**                 |
-| 可复制入库的模板与 Case 说明（无个人命令细节）                    | `**[post-runbook.example.md](post-runbook.example.md)**` |
-| `output/` 历史目录滚动保留 **近 7 天**（维护磁盘；主流程完成后再做）   | 本节 **「`output/` 历史清理」** 小节                               |
-
-
-不要在未读终稿的情况下用摘要覆盖飞书；不要绕过流水线杜撰终稿（例外见 **runbook** 与 `SKILL.md` 的约定）。
-
-**首次使用：** 将 `post-runbook.example.md` 复制为 `post-runbook.md` 后按本机补充。`post-runbook.md` 已列入 `**.gitignore`**（与 `config.json` 类似，勿提交个人步骤）。
-
-### `output/` 历史清理（保留近 7 天）
-
-在当日 `**agenda.md` 已成功产出**且发布/Webhook/回传等 **§5 主流程无阻塞** 后，可对 `**output/`** 做滚动清理：`output/YYYY-MM-DD` 仅保留 **含当日在内连续 7 个自然日** 对应的目录，删除更早的日期目录，避免长期跑流水线占满磁盘。**删除前**确认无本地任务仍依赖被删日期的产物。
-
-- **约定：** 子目录名须为 `YYYY-MM-DD`（与流水线一致）；仅处理该形态，勿误删其它路径。
-- **macOS：**
+### 2.3 补跑历史日期
 
 ```bash
-cd "$SKILL_DIR"
-keep_from=$(date -v-6d +%Y-%m-%d)
-for d in output/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]; do
-  [ -d "$d" ] || continue
-  b=$(basename "$d")
-  [[ "$b" < "$keep_from" ]] && rm -rf "$d"
-done
+# 例如重跑 5 月 9 日
+python3 project-space/pipeline.py --date "2026-05-09"
 ```
 
-- **GNU/Linux（`date`）：** 将 `keep_from=$(date -v-6d +%Y-%m-%d)` 换为 `keep_from=$(date -d '-6 days' +%Y-%m-%d)`（或与你发行版一致的等价写法）。
+---
+
+## 3. 产物说明
+
+| 文件 | 职责 | 必读 |
+|------|------|------|
+| `output/<DATE>/briefing.md` | 对外发布的终稿 | ✅ 是 |
+| `output/<DATE>/summary.json` | LLM 合并结果，用于飞书机器人推送 | 发布时需要 |
+| `output/<DATE>/filtered_ranked.json` | 筛选排序后的中间产物 | 排错时用 |
+| `output/<DATE>/ingested.jsonl` | 原始采集条目 | 排错时用 |
+
+---
+
+## 4. 发布后流程（标准执行）
+
+脚本成功后，按以下步骤执行：
+
+### 4.1 飞书知识库发布
+
+**发布前必读**：Agent 必须完整读取 `output/<DATE>/briefing.md` 文件，不要用摘要或对话复述代替全文发布。
+
+**同名去重**：目标路径下标题 `AI 前沿早报（YYYY-MM-DD）` 只保留一篇，已存在则覆盖。
+
+检索已有文档：
+```bash
+DATE='YYYY-MM-DD'
+SPACE_ID='your_space_id'      # 由大模型根据上下文判断
+PARENT_TOKEN='your_parent_token'  # 由大模型根据上下文判断
+lark-cli wiki nodes list --as user \
+  --params "{\"space_id\":\"${SPACE_ID}\",\"parent_node_token\":\"${PARENT_TOKEN}\",\"page_size\":50}" \
+  --page-all \
+  -q ".data.items[] | select(.title | contains(\"AI 前沿早报（${DATE}）\")) | {title, node_token, obj_edit_time}"
+```
+
+**新建并归档**（未命中时执行）：
+
+| 顺序 | 动作 |
+|------|------|
+| 1 | `lark-cli docs +create --as user --doc-format markdown --content "# 占位"` → 得到文档 `TOKEN` |
+| 2 | `lark-cli docs +update --as user --doc $TOKEN --mode overwrite --new-title "AI 前沿早报（$DATE）" --markdown - < 早报文件路径` |
+| 3 | `lark-cli wiki +move --as user --obj-type docx --obj-token $TOKEN --target-space-id "$SPACE_ID" --target-parent-token "$PARENT_TOKEN"` |
+| 4 | 返回文档链接给用户 |
+
+**参数说明**：
+- 文档标题：`AI 前沿早报（YYYY-MM-DD）`
+- `space_id` / `parent_node_token`：由大模型根据对话上下文判断（非硬编码）
+- 账号模式：`--as user`（勿用 Bot token）
+
+---
+
+### 4.2 群机器人 Webhook 推送
+
+发布完成后必须向群内推送富文本通知：
+
+```bash
+WEBHOOK=$(cat config/secrets.json | python3 -c "import sys, json; print(json.load(sys.stdin)['feishu']['bot_webhook'])")
+
+curl -X POST "$WEBHOOK" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "msg_type": "post",
+    "content": {
+      "post": {
+        "zh_cn": {
+          "title": "早报：AI 前沿日报（YYYY-MM-DD）",
+          "content": [
+            [{"tag": "text", "text": "今日 AI 前沿早报已发布，"}],
+            [{"tag": "a", "text": "点击查看详情", "href": "https://xxx.feishu.cn/…"}]
+          ]
+        }
+      }
+    }
+  }'
+```
+
+---
+
+### 4.3 流程小结
+
+| 步骤 | 动作 |
+|------|------|
+| 1 | 读取终稿确认内容 |
+| 2 | 发布到飞书知识库 |
+| 3 | 群机器人 Webhook 推送 |
+| 4 | 返回文档链接给用户 |
+
+---
+
+## 5. 配置说明
+
+所有配置分为两类：
+
+| 配置类型 | 位置 | 是否可提交 Git |
+|----------|------|----------------|
+| **业务配置**（RSS 源、模块、去重策略等） | `project-space/config/config.json` | ✅ 是 |
+| **敏感信息**（API Key、Webhook） | `config/secrets.json` | ❌ 否（已 gitignore） |
+| **发布目标**（知识库 space_id、parent_token） | 对话上下文 | 由大模型自行判断 |
+
+### 5.1 首次配置
+
+1. **复制敏感配置模板**：
+   ```bash
+   cp config/secrets.example.json config/secrets.json
+   ```
+
+2. **编辑 `config/secrets.json`**，填入你的真实值：
+   ```json
+   {
+     "llm": {
+       "api_key": "sk-your-real-api-key",
+       "base_url": "https://api.deepseek.com",
+       "model_name": "deepseek-chat"
+     },
+     "feishu": {
+       "bot_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-token"
+     }
+   }
+   ```
+
+   **注意**：飞书知识库发布目标（`space_id`、`parent_node_token`）不在配置文件中，由大模型根据对话上下文自行判断。详见 `extension/post-runbook.md`。
+
+### 5.2 配置索引
+
+| 需求 | 位置 |
+|------|------|
+| 发布后流程（含 Webhook、知识库发布） | `extension/post-runbook.md` |
+| RSS 来源、模块、去重策略 | `project-space/config/config.json` |
+| LLM API（Key/BaseUrl/Model）| `config/secrets.json` |
+| Webhook | `config/secrets.json` |
+| 知识库发布目标 | 大模型根据对话上下文自行判断 |
+| 筛选排序提示词 | `project-space/prompts/filter_ranker.md.j2` |
+| 摘要提示词 | `project-space/prompts/summarizer.md.j2` |
+| 早报模板 | `project-space/config/briefing-template.md.j2` |
 
 ---
 
 ## 6. 异常速查
 
-
-| 现象                  | 建议                                |
-| ------------------- | --------------------------------- |
-| 脚本非 0 退出            | 确认 `.venv` 存在、`pip` 依赖齐全；读 stderr |
-| `ingested.jsonl` 为空 | 当日源站无命中或网络失败；告知用户「暂无采集结果」         |
-| `summarize` 失败      | 检查 `kit/config.json`；修好后再跑        |
-| 无 `agenda.md`       | 按 §3 分步执行，看在哪一步中断                 |
-
-
----
-
-## 7. 配置与文档索引
-
-
-| 需求                                               | 位置                                                           |
-| ------------------------------------------------ | ------------------------------------------------------------ |
-| **agenda 生成后的发布与回传（工作副本，git 忽略）**                | `[post-runbook.md](post-runbook.md)`                         |
-| **同上（可入库模板 + Case 说明）**                          | `[post-runbook.example.md](post-runbook.example.md)`         |
-| **飞书群 Webhook**（必做；`scripts/push_feishu_bot.py`） | `[post-runbook.md](post-runbook.md)` §4                      |
-| 来源 RSS、模块关键词、摘要字数、`dedup`                        | `kit/engineering.json`                                       |
-| LLM API                                          | `kit/config.json`（通常不入库；示例见 `config.example.json`）           |
-| 字段协议、热点条数（8～12）、概要字数（尽量 ≤250 字）                  | `kit/prompts&templates/02_response_protocol.md`、`01_task.md` |
-| 版面模板                                             | `kit/prompts&templates/agenda.md.j2`                         |
-| 深度说明（管线扩展、历史约定）                                  | `[reference.md](reference.md)`                               |
-| `kit` 目录说明                                       | `[kit/README.md](kit/README.md)`                             |
-
+| 现象 | 建议 |
+|------|------|
+| 脚本非 0 退出 | 检查虚拟环境、依赖完整性；查看 stderr |
+| `ingested.jsonl` 为空 | 当日源站无命中或网络失败；告知用户「暂无采集结果」 |
+| `filter_rank` 失败 | 检查 `config/secrets.json` 中的 LLM 配置 |
+| `summarize` 失败 | 检查 `config/secrets.json` 中的 LLM 配置；修复后重跑 |
+| 无早报文件 | 按 §2.2 分步执行，定位中断步骤 |
+| 飞书发布失败 | 确认大模型已正确识别目标知识库（space_id、parent_node_token）|
+| Webhook 推送失败 | 检查 `config/secrets.json` 中的 `feishu.bot_webhook` |
 
 ---
 
-## 8. 脚本职责一览
+## 7. 安全与敏感信息
 
+| 配置项 | 用途 | 所在文件 |
+|--------|------|----------|
+| `llm.api_key` | LLM API 认证 | `config/secrets.json`（gitignore） |
+| `feishu.bot_webhook` | 飞书群机器人推送 | `config/secrets.json`（gitignore） |
+| 知识库 `space_id` / `parent_node_token` | 飞书知识库发布目标 | 大模型根据对话上下文自行判断 |
 
-| 脚本                     | 职责                                                                         |
-| ---------------------- | -------------------------------------------------------------------------- |
-| `daily_ai_frontier.py` | 解析 `--date` / `--steps`，按顺序调用各步                                            |
-| `ingest.py`            | 抓取、关键词粗筛、篇内去重、与 **近 N 日** `summary.json` 对照的热点去重（`dedup.recent_summary_*`） |
-| `summarize.py`         | 注入提示词、解析 LLM JSON、校验与补全轮、字段兜底、`summary.json`                               |
-| `assemble.py`          | `summary.json` + 模板 → `agenda.md`                                          |
-| `base_config.py`       | 路径与配置加载                                                                    |
-
-
----
-
-## 9. LLM 输出协议（摘要）
-
-`summarize` 期望根 JSON 包含 `deduplication`、`articles`、`blocks`。每条 `articles[]` 至少含：`point`、`one_liner`、`plain_explain`、`impact_1`、`impact_2`、`digest_for_outline`（**均为非空字符串**）；热点总量由模型按 `**drop_indices` 收敛在约 8～12 条（上限 12）**；`digest_for_outline` **尽量不超过约 250 字**，短稿勿灌水。
-
-完整字段表与自检项以 `**02_response_protocol.md`** 为准；下方仅为结构示意：
-
-```json
-{
-  "deduplication": { "drop_indices": [], "notes": "" },
-  "articles": [
-    {
-      "source_index": 0,
-      "point": "",
-      "one_liner": "",
-      "plain_explain": "",
-      "impact_1": "",
-      "impact_2": "",
-      "digest_for_outline": ""
-    }
-  ],
-  "blocks": {
-    "header": { "tags_full": "", "data_sources": "" },
-    "footer": {
-      "hardware": "",
-      "model": "",
-      "ai_engineering": "",
-      "industry": "",
-      "policy": ""
-    }
-  }
-}
-```
-
+**注意**：`config/secrets.example.json` 是模板文件（可提交），`config/secrets.json` 是真实配置（已 gitignore）。
