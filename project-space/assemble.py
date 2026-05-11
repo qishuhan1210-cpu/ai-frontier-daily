@@ -35,8 +35,9 @@ class AssembleModule(BaseModule):
         self.max_per = 8
         self.summary_cap = 320
 
-        project_root = os.path.dirname(os.path.abspath(__file__))
-        self.templates_dir = os.path.join(project_root, 'config')
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent
+        self.templates_dir = project_root / 'config'
 
     def _load(self):
         """加载配置"""
@@ -83,17 +84,18 @@ class AssembleModule(BaseModule):
         """按时间排序"""
         return sorted(items, key=self._parse_time, reverse=True)
 
-    def _news_row(self, letter: str, it: dict) -> dict:
+    def _news_row(self, number: str, it: dict) -> dict:
         """生成新闻行数据"""
         title = it.get('title', '')
         title_disp = self.clip_text(title, 100)
 
-        # 摘要文本
-        raw = (it.get('_ai_summary') or it.get('summary', '')).strip()
+        # 摘要文本：优先使用 LLM 生成的 digest_for_outline
+        raw = (it.get('digest_for_outline') or it.get('_ai_summary') or it.get('summary', '')).strip()
         if raw and not self.is_placeholder(raw):
             summary = raw[:self.summary_cap]
         else:
-            parts = [it.get('point'), it.get('one_liner'), it.get('plain_explain')]
+            # 降级方案：拼接 headline 和 plain_explain
+            parts = [it.get('headline'), it.get('plain_explain')]
             stitched = ' '.join(str(p).strip() for p in parts if p and str(p).strip())
             summary = stitched[:self.summary_cap] if stitched else (it.get('summary', '')[:self.summary_cap] or self.PLACEHOLDER)
 
@@ -101,11 +103,14 @@ class AssembleModule(BaseModule):
             v = it.get(k)
             return str(v).strip() if v and str(v).strip() else (fb[:200] if fb else self.PLACEHOLDER)
 
+        # headline 降级：如果没有则用 title，再没有则用 digest 截断
+        headline = field('headline', title_disp if title_disp else summary[:50])
+        tag = field('tag', '其他')
+
         return {
-            'letter': letter,
-            'title_display': title_disp,
-            'point': field('point'),
-            'one_liner': field('one_liner', title_disp),
+            'number': number,
+            'headline': headline,
+            'tag': tag,
             'link_label': f"{it.get('source', '')}：{title}" if it.get('source') or title else self.PLACEHOLDER,
             'url': it.get('url') or '#',
             'summary': summary,
@@ -144,18 +149,31 @@ class AssembleModule(BaseModule):
 
         # sections
         sections = []
+        section_idx = 1
         for m in self.modules:
             mid = m['id']
             mod_items = self._sort(groups[mid])[:self.max_per]
+            entries = []
+            for i, it in enumerate(mod_items):
+                number = f"{section_idx}.{i + 1}"
+                entries.append(self._news_row(number, it))
             sections.append({
                 'heading': f"## {m['name']}\n",
                 'empty': not mod_items,
-                'entries': [self._news_row(chr(ord('a') + i), it) for i, it in enumerate(mod_items)]
+                'entries': entries
             })
+            section_idx += 1
 
         # unknown
         unk_items = self._sort(groups.get('unknown', []))[:self.max_per]
-        unknown = {'entries': [self._news_row(chr(ord('a') + i), it) for i, it in enumerate(unk_items)]} if unk_items else None
+        if unk_items:
+            unk_entries = []
+            for i, it in enumerate(unk_items):
+                number = f"6.{i + 1}"  # 未分类固定为第6节
+                unk_entries.append(self._news_row(number, it))
+            unknown = {'entries': unk_entries}
+        else:
+            unknown = None
 
         # footer
         if blocks and blocks.get('footer'):

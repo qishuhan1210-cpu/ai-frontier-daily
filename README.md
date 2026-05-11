@@ -1,19 +1,19 @@
 # AI 前沿早报（ai-frontier-daily）
 
-编排 **ingest → summarize → assemble** 流水线：抓取与过滤 RSS、LLM 摘要、渲染当日 **`agenda.md`**。可作为独立脚本使用，也可配合 Cursor Agent Skill（见 [`SKILL.md`](SKILL.md)）。
+编排 **ingest → summarize → assemble** 流水线：抓取与过滤 RSS、LLM 摘要、渲染早报 Markdown 终稿。可作为独立脚本使用，也可配合 Cursor Agent Skill（见 [`SKILL.md`](SKILL.md)）。
 
 ## 流水线
 
 | 步骤 | 脚本 | 默认产出 |
 |------|------|----------|
-| ingest | `scripts/ingest.py` | `output/<date>/ingested.jsonl` |
-| summarize | `scripts/summarize.py` | `output/<date>/summary.json` |
-| assemble | `scripts/assemble.py` | `output/<date>/agenda.md` |
+| ingest | `project-space/ingest.py` | `output/<date>/ingested.jsonl` |
+| summarize | `project-space/summarize.py` | `output/<date>/summary.json` |
+| assemble | `project-space/assemble.py` | `output/<date>/` 目录下的早报 Markdown |
 
 一键执行：
 
 ```bash
-.venv/bin/python3 scripts/daily_ai_frontier.py --date YYYY-MM-DD
+.venv/bin/python3 project-space/pipeline.py --date YYYY-MM-DD
 ```
 
 ## 环境

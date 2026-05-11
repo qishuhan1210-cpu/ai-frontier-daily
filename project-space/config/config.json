@@ -1,15 +1,15 @@
 {
   "output": {
-    "time_window_hours": 48,
-    "max_records": 800,
+    "time_window_hours": 72,
+    "max_records": 1000,
     "timezone_offset": 8
   },
   "public_feeds": {
     "settings": {
       "timeout_seconds": 20,
       "max_retries": 3,
-      "max_items_per_feed": 50,
-      "max_items_total": 800,
+      "max_items_per_feed": 100,
+      "max_items_total": 1000,
       "user_agent": "Mozilla/5.0 (compatible; AIFrontierDaily/1.0; +https://github.com/YOUR_GITHUB_OR_USER/ai-frontier-daily) AppleWebKit/537.36 (KHTML, like Gecko)",
       "retry_backoff_seconds": 1.5
     },
@@ -25,13 +25,13 @@
     ]
   },
   "dedup": {
-    "title_similarity_threshold": 0.85,
+    "title_similarity_threshold": 0.88,
     "word_ngram_n": 3,
     "char_ngram_n": 3,
     "recent_summary_enabled": true,
-    "recent_summary_days": 7,
-    "recent_summary_title_threshold": 0.82,
-    "recent_summary_text_threshold": 0.38
+    "recent_summary_days": 3,
+    "recent_summary_title_threshold": 0.90,
+    "recent_summary_text_threshold": 0.45
   },
   "sources": {
     "tier1": [
@@ -54,7 +54,14 @@
       "baidu.com/s",
       "mp.weixin.qq.com",
       "donews.com",
-      "baijiahao.baidu.com"
+      "baijiahao.baidu.com",
+      "基金净值",
+      "基金排名",
+      "纯电车 unrelated",
+      "手机壳配件",
+      "游戏皮肤",
+      "游戏道具",
+      "娱乐八卦"
     ],
     "url_patterns": {
       "allowed": ["/detail/", "/p/", "/newsDetail_", "/article/", "/info/", "/a/"],
@@ -97,7 +104,7 @@
     ],
     "time_window_hours": 48,
     "max_news_per_module": 8,
-    "summary_max_chars": 320,
+    "summary_max_chars": 500,
     "summary_unified_max_items": 120,
     "summary_unified_item_max_chars": 1800
   }

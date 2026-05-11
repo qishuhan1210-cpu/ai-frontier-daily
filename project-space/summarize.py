@@ -8,55 +8,24 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 import re
 from typing import Any, Dict, List, Optional
 
-from utils import PROMPTS_DIR, load_assembly_config
+from utils import PROMPTS_DIR, LLMClient, load_assembly_config
 from utils.base import BaseModule
 from utils.prompt_loader import PromptLoader
-
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
 
 
 class SummarizeModule(BaseModule):
     """LLM 摘要"""
 
     TEMPLATE = 'summarizer.md.j2'
-    KEYS = ('point', 'one_liner', 'plain_explain', 'impact_1', 'impact_2', 'digest_for_outline')
+    # LLM 输出的 articles[] 字段（与 summarizer.md.j2 中定义的响应协议一致）
+    KEYS = ('headline', 'plain_explain', 'impact_1', 'impact_2', 'digest_for_outline', 'tag')
 
-    def __init__(self, date_str: str, llm_config: dict):
+    def __init__(self, date_str: str):
         super().__init__(date_str, 'summarize')
-        self.llm_config = llm_config
-        self.model = llm_config.get('model_name', '')
-
-    def _client(self) -> Optional[Any]:
-        """创建 LLM 客户端"""
-        if OpenAI is None:
-            raise ImportError('需要安装 openai: pip install openai')
-        key = self.llm_config.get('api_key')
-        url = self.llm_config.get('base_url')
-        if not (key and url and self.model):
-            return None
-        try:
-            return OpenAI(api_key=key, base_url=url)
-        except Exception:
-            return None
-
-    def _call(self, client, system: str, user: str) -> Optional[str]:
-        """调用 LLM"""
-        try:
-            resp = client.chat.completions.create(
-                model=self.model, n=1,
-                messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
-            )
-            return resp.choices[0].message.content
-        except Exception as e:
-            print(f'LLM 调用失败: {e}')
-            return None
+        self.llm_client = LLMClient()
 
     def _build_prompts(self, items: List[dict]) -> tuple:
         """构建 system/user 提示词"""
@@ -82,24 +51,6 @@ class SummarizeModule(BaseModule):
         parts = loader.parse_frontmatter(rendered or '')
         return parts.get('system', ''), parts.get('user', '')
 
-    def _parse_response(self, text: Optional[str]) -> dict:
-        """解析 LLM 响应"""
-        if not text:
-            return {}
-        raw = text.strip()
-        if raw.startswith('```'):
-            raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.IGNORECASE)
-            raw = re.sub(r'\s*```$', '', raw)
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            m = re.search(r'\{[\s\S]*\}', raw)
-            if m:
-                try:
-                    return json.loads(m.group(0))
-                except json.JSONDecodeError:
-                    pass
-        return {}
 
     def _validate(self, data: dict, n_items: int) -> tuple:
         """校验响应"""
@@ -138,8 +89,12 @@ class SummarizeModule(BaseModule):
         for i in kept:
             row = by_si.get(i, {})
             for k in self.KEYS:
-                if not str(row.get(k, '')).strip():
+                v = str(row.get(k, '')).strip()
+                if not v:
                     errs.append(f'source_index={i} 的 {k} 为空')
+                # 检测无效内容（仅检测文本字段）
+                elif k in ('headline', 'plain_explain', 'digest_for_outline') and self._is_invalid_content(v):
+                    errs.append(f'source_index={i} 的 {k} 包含无效占位符（如"点击查看原文"），请重新生成实际内容')
 
         blk = data.get('blocks', {})
         if not isinstance(blk, dict) or not isinstance(blk.get('header'), dict):
@@ -214,27 +169,123 @@ class SummarizeModule(BaseModule):
         out['blocks'] = {'header': header_out, 'footer': footer_out}
         return out
 
-    def _fill_missing(self, item: dict, cap: int) -> None:
-        """填充缺失字段"""
-        title = (item.get('title') or '').strip()
-        blob = (item.get('summary') or title).strip()
+    # 无效内容检测模式
+    INVALID_PATTERNS = [
+        r'点击查看原文[>\s]*',
+        r'阅读全文[>\s]*',
+        r'原文未提供[>\s]*',
+        r'查看原文[>\s]*',
+        r'点击阅读[>\s]*',
+    ]
 
-        if not item.get('point'):
-            item['point'] = self.clip_text(title, 42) or '（基于标题的简要标注）'
-        if not item.get('one_liner'):
-            item['one_liner'] = self.clip_text(title, 38) or item['point'][:38]
-        if not item.get('plain_explain'):
-            item['plain_explain'] = self.clip_text(blob, 120)
-        if not item.get('impact_1'):
-            item['impact_1'] = '对关注相关赛道与供应链的读者有信息增量'
-        if not item.get('impact_2'):
-            item['impact_2'] = '具体影响需结合后续落地与独立信源核实'
-        if not item.get('digest_for_outline'):
-            item['digest_for_outline'] = self.clip_text(blob, max(cap, 260))
+    def _is_invalid_content(self, text: str) -> bool:
+        """检测内容是否为无效占位符"""
+        if not text or not str(text).strip():
+            return True
+        text_lower = str(text).lower()
+        for pattern in self.INVALID_PATTERNS:
+            if re.search(pattern, text_lower):
+                return True
+        # 检测是否是直接复制title（长度相似且内容重复）
+        return False
+
+    def _get_valid_blob(self, item: dict) -> str:
+        """获取有效的原始内容（优先 content，其次 summary，最后 title）"""
+        # 优先使用原始正文 content
+        content = (item.get('content') or '').strip()
+        if content and not self._is_invalid_content(content):
+            return content
+        # 其次使用 summary（但如果无效则跳过）
+        summary = (item.get('summary') or '').strip()
+        if summary and not self._is_invalid_content(summary):
+            return summary
+        # 最后使用 title
+        return (item.get('title') or '').strip()
+
+    def _fill_missing(self, item: dict, cap: int) -> None:
+        """填充缺失字段（兜底方案，当 LLM 输出不完整或使用无效内容时使用）"""
+        title = (item.get('title') or '').strip()
+        # 使用有效的原始内容
+        blob = self._get_valid_blob(item)
+
+        # 新字段：headline（融合 point + one_liner 的角色）
+        if not item.get('headline') or self._is_invalid_content(item.get('headline')):
+            # 如果旧字段存在，优先合并使用；否则基于标题生成
+            old_point = item.get('point', '').strip()
+            old_one_liner = item.get('one_liner', '').strip()
+            if old_point and old_one_liner:
+                item['headline'] = f"{old_point}：{old_one_liner}"[:50]
+            elif old_point:
+                item['headline'] = old_point[:50]
+            elif old_one_liner:
+                item['headline'] = old_one_liner[:50]
+            else:
+                item['headline'] = self.clip_text(title, 50) or '（基于标题的简要标注）'
+
+        # plain_explain：如果无效，使用有效blob重新生成
+        plain = item.get('plain_explain', '')
+        if not plain or self._is_invalid_content(plain):
+            item['plain_explain'] = self._generate_plain_explain(blob, title)
+
+        # 影响字段：如果是兜底文案，尝试基于模块和标题生成更有意义的
+        impact_1 = item.get('impact_1', '')
+        impact_2 = item.get('impact_2', '')
+        if not impact_1 or impact_1 == '对关注相关赛道与供应链的读者有信息增量':
+            item['impact_1'] = self._generate_impact(title, item.get('_matched_module', ''), 1)
+        if not impact_2 or impact_2 == '具体影响需结合后续落地与独立信源核实':
+            item['impact_2'] = self._generate_impact(title, item.get('_matched_module', ''), 2)
+
+        # digest_for_outline：如果无效，使用有效blob重新生成
+        digest = item.get('digest_for_outline', '')
+        if not digest or self._is_invalid_content(digest):
+            item['digest_for_outline'] = self._generate_digest(blob, cap)
+
+        # 标签兜底：基于标题关键词推断
+        tag = item.get('tag', '')
+        if not tag or tag == '其他':
+            item['tag'] = self._infer_tag(title)
 
         dig = (item.get('digest_for_outline') or '').strip()
-        base = (item.get('summary') or '').strip()
-        item['_ai_summary'] = (dig or base or item.get('content', ''))[:cap]
+        base = self._get_valid_blob(item)
+        item['_ai_summary'] = (dig or base)[:cap]
+
+    def _generate_impact(self, title: str, module: str, idx: int) -> str:
+        """基于标题和模块生成更有针对性的影响描述"""
+        # 简单启发式规则
+        title_lower = title.lower()
+        if '融资' in title or '投资' in title or '亿元' in title:
+            return ['增强相关赛道资本信心，推动产业链扩张', '加剧细分领域竞争格局重塑'][idx-1] if idx <= 2 else '对关注相关赛道的读者有信息增量'
+        elif '裁员' in title or '离职' in title:
+            return ['反映行业调整压力，人才流动加速', '对团队稳定性与业务连续性带来挑战'][idx-1] if idx <= 2 else '对关注相关赛道的读者有信息增量'
+        elif '发布' in title or '推出' in title or '新品' in title:
+            return ['丰富产品线布局，强化市场竞争力', '为用户提供更多选择，推动行业标准升级'][idx-1] if idx <= 2 else '对关注相关赛道的读者有信息增量'
+        elif '合作' in title or '联合' in title:
+            return ['整合双方优势资源，拓展业务边界', '对生态伙伴产生示范效应'][idx-1] if idx <= 2 else '对关注相关赛道的读者有信息增量'
+        elif '政策' in title or '监管' in title or '法规' in title:
+            return ['影响行业合规成本与运营模式', '推动市场规范化发展，加速优胜劣汰'][idx-1] if idx <= 2 else '对关注相关赛道的读者有信息增量'
+        elif module == 'ai_engineering':
+            return ['为开发者提供新工具/方法论参考', '可能改变现有工程实践与开发流程'][idx-1] if idx <= 2 else '对关注AI工程的读者有信息增量'
+        elif module == 'model':
+            return ['推动大模型技术边界扩展', '为下游应用提供更强大的基础能力'][idx-1] if idx <= 2 else '对关注模型技术的读者有信息增量'
+        else:
+            return ['对关注相关赛道与供应链的读者有信息增量', '具体影响需结合后续落地与独立信源核实'][idx-1] if idx <= 2 else '对关注相关赛道的读者有信息增量'
+
+    def _generate_plain_explain(self, blob: str, title: str) -> str:
+        """基于原始内容生成白话解释（兜底方案）"""
+        # 简单提取策略：取blob的前80字，移除常见无意义开头
+        cleaned = re.sub(r'^(作者[｜\|].*?编辑[｜\|].*?)[\s]*', '', blob)
+        cleaned = re.sub(r'^(今日热点导览.*?)[\s]*', '', cleaned)
+        cleaned = cleaned.strip()
+        if len(cleaned) > 80:
+            return cleaned[:78] + '…'
+        return cleaned[:80] or '（基于原文的简要说明）'
+
+    def _generate_digest(self, blob: str, cap: int) -> str:
+        """基于原始内容生成摘要（兜底方案）"""
+        # 简单提取策略：清理后取前cap字
+        cleaned = re.sub(r'^(作者[｜\|].*?编辑[｜\|].*?)[\s]*', '', blob)
+        cleaned = cleaned.strip()
+        return self.clip_text(cleaned, max(cap, 260))
 
     def run(self, input_file: str, output_file: str) -> dict:
         """执行完整流程"""
@@ -244,35 +295,28 @@ class SummarizeModule(BaseModule):
 
         items = self.load_jsonl(input_file)[:max_items]
 
-        client = self._client()
-        if not client:
-            for it in items:
-                self._fill_missing(it, cap)
-            self.save_json(output_file, {'items': items, 'blocks': None})
-            return {'count': len(items), 'api_calls': 0, 'unified': False}
-
         system, user = self._build_prompts(items)
-        raw = self._call(client, system, user)
-        data = self._parse_response(raw)
+        data = self.llm_client.call_json(system, user, temperature=0.3, max_tokens=20480)
         api_calls = 1
-
-        if not data:
-            for it in items:
-                self._fill_missing(it, cap)
-            self.save_json(output_file, {'items': items, 'blocks': None})
-            return {'count': len(items), 'api_calls': api_calls, 'unified': False}
 
         ok, errs = self._validate(data, len(items))
         if not ok:
             print(f'校验未通过 ({len(errs)} 项)，尝试修复...')
             kept = [i for i in range(len(items)) if i not in {int(x) for x in data.get('deduplication', {}).get('drop_indices', []) if str(x).isdigit()}]
             repair = self._repair_prompt(errs, kept)
-            raw2 = self._call(client, system, user + repair)
+            data2 = self.llm_client.call_json(system, user + repair, temperature=0.3, max_tokens=20480)
             api_calls += 1
-            data2 = self._parse_response(raw2)
             data = self._merge_payload(data, data2)
 
-        # 合并结果
+        # 合并结果前先清理 LLM 输出的无效内容
+        for a in data.get('articles', []):
+            if not isinstance(a, dict):
+                continue
+            for k in ('headline', 'plain_explain', 'digest_for_outline'):
+                v = a.get(k, '')
+                if self._is_invalid_content(v):
+                    a[k] = ''  # 清空无效内容，让兜底生成重新填充
+
         drop = set()
         try:
             drop = {int(x) for x in data.get('deduplication', {}).get('drop_indices', [])}

@@ -1,6 +1,6 @@
-# agenda.md 生成之后的后续事项
+# 早报终稿生成后的发布流程
 
-在 `output/<DATE>/agenda.md` 已由 `assemble`（或一键 `pipeline.py`）成功产出后，按本节执行。**内容与结构始终以该文件为准**；除非脚本失败且用户明确要求手工整理，否则不要用对话凭空重写终稿。**标准对外流程为 §2～§4 连贯执行**：发布至飞书后 **必须**完成 §4 群机器人推送（`msg_type: post`）。
+在 `output/<DATE>/` 目录下的早报 Markdown 文件已由 `assemble`（或一键 `pipeline.py`）成功产出后，按本节执行。**内容与结构始终以该文件为准**；除非脚本失败且用户明确要求手工整理，否则不要用对话凭空重写终稿。**标准对外流程为 §2～§4 连贯执行**：发布至飞书后 **必须**完成 §4 群机器人推送（`msg_type: post`）。
 
 **发布目标判定**：飞书知识库发布的 `space_id` 和 `parent_node_token`**不由配置文件硬编码**，由大模型根据对话上下文自行判断（例如用户提及的部门、项目、话题等线索）。Webhook 从 `.env` 读取。
 
@@ -8,7 +8,7 @@
 
 ## 1. 发布前必读
 
-- **路径**：`$SKILL_DIR/output/$DATE/agenda.md`（`DATE` 为 `YYYY-MM-DD`）。
+- **路径**：`$SKILL_DIR/output/$DATE/` 目录下的早报 Markdown 文件（`DATE` 为 `YYYY-MM-DD`）。
 - **Agent 在对外发布（含飞书）前必须完整读取该文件**，不要用摘要或对话里的复述代替全文去做覆盖发布。
 
 ---
@@ -49,7 +49,7 @@
 | 顺序  | 动作                                                                                                                           |
 | --- | ---------------------------------------------------------------------------------------------------------------------------- |
 | 1   | `lark-cli docs +create --as user --doc-format markdown --content "# 占位"` → 得到文档 `TOKEN`                                      |
-| 2   | `lark-cli docs +update --as user --doc $TOKEN --mode overwrite --new-title "AI 前沿早报（$DATE）" --markdown - < agenda.md`        |
+| 2   | `lark-cli docs +update --as user --doc $TOKEN --mode overwrite --new-title "AI 前沿早报（$DATE）" --markdown - < 早报文件路径`        |
 | 3   | `lark-cli wiki +move --as user --obj-type docx --obj-token $TOKEN --target-space-id "$SPACE_ID" --target-parent-token "$PARENT_TOKEN"`（参数由大模型根据上下文判断）|
 | 4   | 把文档/知识库可调链接返回给用户                                                                                                             |
 
@@ -75,7 +75,7 @@
 
 ## 3. 向用户回传
 
-完成 **§2、§4** 后，将 `DOC_URL`（可调文档/知识库链接）返回给用户。若本次任务从始至终只要本地 `output/<DATE>/agenda.md`、不走飞书，则不适用 §2～§4，直接向用户说明本地路径即可。
+完成 **§2、§4** 后，将 `DOC_URL`（可调文档/知识库链接）返回给用户。若本次任务从始至终只要本地早报文件、不走飞书，则不适用 §2～§4，直接向用户说明本地路径即可。
 
 ---
 
@@ -111,5 +111,5 @@ python3 extension/push_feishu_bot.py --date YYYY-MM-DD --doc-url 'https://xxx.fe
 
 - 流水线执行、分步排错、产物索引：**[SKILL.md](../SKILL.md)**
 - 飞书 / `lark-cli` 通用规范与命令模板：**[feishu-operations-skill/SKILL.md](../feishu-operations-skill/SKILL.md)**（及同级 `references/` 元信息、常用命令示例）
-- 若 `agenda.md` 不存在或脚本失败：不要在 Chat 里杜撰终稿，按 **SKILL.md** 中的分步执行与异常速查处理
+- 若早报文件不存在或脚本失败：不要在 Chat 里杜撰终稿，按 **SKILL.md** 中的分步执行与异常速查处理
 

@@ -285,8 +285,8 @@ class IngestModule(BaseModule):
         fingerprints = []
         for i in range(1, n_days + 1):
             d = (base - timedelta(days=i)).strftime('%Y-%m-%d')
-            path = os.path.join(output_dir_for_date(d), FN_SUMMARY)
-            if not os.path.exists(path):
+            path = output_dir_for_date(d) / FN_SUMMARY
+            if not path.exists():
                 continue
             try:
                 with open(path, 'r', encoding='utf-8') as f:

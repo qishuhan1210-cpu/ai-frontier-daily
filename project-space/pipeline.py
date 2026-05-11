@@ -6,7 +6,7 @@ pipeline.py — AI Frontier Daily 早报流水线主入口
 流程编排：ingest → summarize → assemble
 - ingest: RSS 抓取 → 粗筛 → 去重 → ingested.jsonl
 - summarize: LLM 摘要 → summary.json
-- assemble: 拼版渲染 → agenda.md
+- assemble: 拼版渲染 → 早报 Markdown 终稿
 
 使用方式:
     python3 pipeline.py --date 2026-05-11
@@ -25,7 +25,7 @@ from typing import List, Optional
 # 优先使用本地 utils
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from utils import default_day_paths, load_llm_config
+from utils import default_day_paths
 
 # 导入三大模块
 from ingest import IngestModule
@@ -78,7 +78,7 @@ def main():
                         help='执行步骤: all (默认), ingest,summarize,assemble')
     parser.add_argument('--ingested', '-i', default=None, help='输入 ingested.jsonl 路径')
     parser.add_argument('--summary', default=None, help='输入/输出 summary.json 路径')
-    parser.add_argument('--agenda', '-o', default=None, help='输出 agenda.md 路径')
+    parser.add_argument('--output', '-o', default=None, help='输出早报 Markdown 文件路径')
     args = parser.parse_args()
 
     date_str = args.date or datetime.now().strftime('%Y-%m-%d')
@@ -86,7 +86,7 @@ def main():
 
     ingested_path = args.ingested or paths['ingested']
     summary_path = args.summary or paths['summary']
-    agenda_path = args.agenda or paths['agenda']
+    output_path = args.output or paths['briefing']
 
     steps, unknown = parse_steps(args.steps)
     if unknown:
@@ -115,11 +115,10 @@ def main():
     # 执行 summarize
     if 'summarize' in steps:
         print('=== Summarize 阶段: LLM 摘要 ===')
-        if not os.path.exists(ingested_path):
+        if not ingested_path.exists():
             print(f'错误: 输入文件不存在: {ingested_path}')
             return
-        llm_cfg = load_llm_config()
-        summarize_module = SummarizeModule(date_str, llm_cfg)
+        summarize_module = SummarizeModule(date_str)
         result = summarize_module.run(ingested_path, summary_path)
         print(f'处理: {result["count"]} 条')
         print(f'API 调用: {result["api_calls"]} 次')
@@ -130,11 +129,11 @@ def main():
     # 执行 assemble
     if 'assemble' in steps:
         print('=== Assemble 阶段: 拼版渲染 ===')
-        if not os.path.exists(summary_path):
+        if not summary_path.exists():
             print(f'错误: 输入文件不存在: {summary_path}')
             return
         assemble_module = AssembleModule(date_str)
-        result = assemble_module.run(summary_path, agenda_path)
+        result = assemble_module.run(summary_path, output_path)
         print(f'渲染: {result["count"]} 条新闻')
         print(f'输出: {result["path"]}')
         print()

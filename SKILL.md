@@ -1,7 +1,7 @@
 ---
 name: ai-frontier-daily
 description: >-
-  每日 AI 前沿早报流水线：自动采集 RSS → LLM 摘要 → 渲染 agenda.md → 飞书发布 + 群机器人 Webhook。
+  每日 AI 前沿早报流水线：自动采集 RSS → LLM 摘要 → 渲染早报 Markdown → 飞书发布 + 群机器人 Webhook。
   这是一个定时任务 Skill，通过 cron 自动执行，无需用户主动触发。
 disable-model-invocation: true
 ---
@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 | 层级 | 职责 | 产物 |
 |------|------|------|
-| **脚本** | RSS 采集 → 去重 → LLM 摘要 → Jinja 渲染 | `output/<DATE>/agenda.md` |
+| **脚本** | RSS 采集 → 去重 → LLM 摘要 → Jinja 渲染 | `output/<DATE>/` 目录下的早报 Markdown |
 | **Agent** | 异常排查、指定日期补跑、发布流程编排 | 飞书文档 + 群推送 |
 
 ---
@@ -39,7 +39,7 @@ python3 project-space/pipeline.py --date "YYYY-MM-DD"
 ```
 
 - 默认执行全部步骤：`ingest` → `summarize` → `assemble`
-- 产物路径：`output/<DATE>/agenda.md`
+- 产物路径：`output/<DATE>/` 目录下的早报 Markdown 文件
 
 ### 2.2 分步执行（排错）
 
@@ -63,19 +63,19 @@ python3 project-space/pipeline.py --date "2026-05-09"
 
 | 文件 | 职责 | 必读 |
 |------|------|------|
-| `output/<DATE>/agenda.md` | 对外发布的 Markdown 终稿 | ✅ 是 |
+| `output/<DATE>/` 目录下的早报 Markdown | 对外发布的终稿 | ✅ 是 |
 | `output/<DATE>/summary.json` | LLM 合并结果，用于飞书机器人推送 | 发布时需要 |
 | `output/<DATE>/ingested.jsonl` | 原始采集条目，排错时用 | 否 |
 
 ---
 
-## 4. 发布后流程（agenda.md 生成后）
+## 4. 发布后流程（早报终稿生成后）
 
 脚本成功后，按以下步骤执行：
 
 | 步骤 | 动作 | 文档 |
 |------|------|------|
-| 1 | 读取终稿确认内容 | `output/<DATE>/agenda.md` |
+| 1 | 读取终稿确认内容 | `output/<DATE>/` 目录下的早报 Markdown 文件 |
 | 2 | 发布到飞书知识库 | 见 `extension/post-runbook.md` §2 |
 | 3 | 群机器人 Webhook 推送 | 见 `extension/post-runbook.md` §4 |
 | 4 | 返回文档链接给用户 | — |
@@ -138,7 +138,7 @@ python3 project-space/pipeline.py --date "2026-05-09"
 | 脚本非 0 退出 | 检查虚拟环境、依赖完整性；查看 stderr |
 | `ingested.jsonl` 为空 | 当日源站无命中或网络失败；告知用户「暂无采集结果」 |
 | `summarize` 失败 | 检查 `.env` 中的 `LLM_API_KEY`；修复后重跑 |
-| 无 `agenda.md` | 按 §2.2 分步执行，定位中断步骤 |
+| 无早报文件 | 按 §2.2 分步执行，定位中断步骤 |
 | 飞书发布失败 | 确认大模型已正确识别目标知识库（space_id、parent_node_token）|
 | Webhook 推送失败 | 检查 `.env` 中的 `FEISHU_BOT_WEBHOOK` |
 
