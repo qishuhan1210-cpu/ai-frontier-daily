@@ -1,4 +1,9 @@
 {
+  "output": {
+    "time_window_hours": 48,
+    "max_records": 800,
+    "timezone_offset": 8
+  },
   "public_feeds": {
     "settings": {
       "timeout_seconds": 20,

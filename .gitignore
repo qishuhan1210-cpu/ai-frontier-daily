@@ -25,10 +25,11 @@ output/
 .AppleDouble
 .LSOverride
 
-# 项目本地/敏感
-kit/config.json
-post-runbook.md
-待办事项.md
+# 个人隐私敏感信息（环境变量配置）
+.env
+
+# 项目本地临时文件
+TODO&CHANGELOG.md
 
 # 临时与备份
 *.tmp

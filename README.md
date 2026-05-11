@@ -19,7 +19,7 @@
 ## 环境
 
 - Python 3.10+（建议）
-- 依赖见 [`requirements.txt`](requirements.txt)
+- 依赖见 [`project-space/requirements.txt`](project-space/requirements.txt)
 
 ```bash
 python3 -m venv .venv
@@ -34,7 +34,7 @@ python3 -m venv .venv
 
 ## 文档
 
-- 字段与扩展规则：[`reference.md`](reference.md)
+- 字段与扩展规则：[`references/reference.md`](references/reference.md)
 - `kit` 目录说明：[`kit/README.md`](kit/README.md)
 
 ## 许可证

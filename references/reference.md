@@ -24,13 +24,13 @@
 |------|------|
 | `scripts/daily_ai_frontier.py` | 每日 AI 前沿早报编排入口：`--steps all` = ingest → summarize → assemble → `agenda.md` |
 | `scripts/__init__.py` | 包级再导出（`ORDER`、`default_day_paths`、`load_*` 等），实现仍在 `base_config` / `pipeline` |
-| `scripts/pipeline.py` | 规范步骤名 `ORDER` 与 `parse_steps`（解析 `--steps`，未知片段告警） |
+| `scripts/utils/pipeline.py` | 规范步骤名 `ORDER` 与 `parse_steps`（解析 `--steps`，未知片段告警） |
 | `scripts/ingest.py` | 抓取 + 粗筛 + 去重，产出 `ingested.jsonl`（`run_ingest`） |
 | `scripts/summarize.py` | LLM 摘要，产出 `summary.json`（`items` + 可选 `blocks`）；`run_summarize` |
 | `scripts/assemble.py` | 读 `summary.json`，组装上下文并渲染 `agenda.md`（`run_assemble`） |
-| `scripts/base_config.py` | 路径常量、`default_day_paths`、`FN_*`；`load_assembly_config`、`load_sources_config`、`load_public_feeds_config`、`load_dedup_config` 等（读 `engineering.json`） |
+| `scripts/utils/base_config.py` | 路径常量、`default_day_paths`、`FN_*`；`load_assembly_config`、`load_sources_config`、`load_public_feeds_config`、`load_dedup_config` 等（读 `engineering.json`） |
 | `kit/engineering.json` | 来源、tier、assembly 模块、去重等工程规则 |
-| `kit/prompts&templates/` | `01_task.md`、`02_response_protocol.md`、`agenda.md.j2`、`system.md.j2`、`runtime_injection.md.j2` |
+| `kit/prompts&templates/` | `01_task.md`、`02_response_protocol.md`、`briefing-template.md.j2`、`system.md.j2`、`runtime_injection.md.j2`、`summarizer.md.j2` |
 | `kit/config.json` | API 密钥等（示例：`config.example.json`） |
 | `output/{date}/` | 当日产物目录（见 §2） |
 
@@ -73,7 +73,8 @@
 |------|------|
 | `kit/prompts&templates/system.md.j2` | System 消息（`summarize.build_system_prompt`） |
 | `kit/prompts&templates/runtime_injection.md.j2` | User 末尾运行时注入 |
-| `kit/prompts&templates/agenda.md.j2` | 早报 `agenda.md` 版式 |
+| `kit/prompts&templates/briefing-template.md.j2` | 早报版式模板 |
+| `kit/prompts&templates/summarizer.md.j2` | 摘要生成提示词 |
 
 运行时：`summarize.py` 将 §4.1 + 注入段拼成 User；System / 注入模版由 `base_config.TEMPLATES_DIR` 加载。
 
@@ -85,7 +86,7 @@
 
 ## 5. 条目字段与编辑总则
 
-与统一管线中 `articles[]` 及 `assemble.py` + `agenda.md.j2` 一致；**配置以 `engineering.json` 的 `sources` / `assembly` 为准**。
+与统一管线中 `articles[]` 及 `assemble.py` + `briefing-template.md.j2` 一致；**配置以 `engineering.json` 的 `sources` / `assembly` 为准**。
 
 ### 5.1 六字段与下游映射
 
