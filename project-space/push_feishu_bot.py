@@ -122,7 +122,7 @@ class FeishuBotPusher:
     def _build_payload(self) -> dict[str, Any]:
         """构建飞书交互式卡片 payload"""
         summary = self._load_summary()
-        paragraphs = self._build_paragraphs(summary.get('blocks', {}))
+        paragraphs = self._build_paragraphs(summary.get('blocks', {}), summary.get('items', []))
 
         elements = [
             {'tag': 'div', 'text': {'tag': 'lark_md', 'content': p}}
@@ -155,10 +155,13 @@ class FeishuBotPusher:
         with open(self.cfg.summary_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
-    def _build_paragraphs(self, blocks: dict) -> list[str]:
-        """从 blocks.footer 构建段落列表"""
+    def _build_paragraphs(self, blocks: dict, items: list) -> list[str]:
+        """从 blocks.footer 构建段落列表，包含热度标识"""
         footer = blocks.get('footer', {})
         paragraphs = []
+
+        # 计算每个模块的热度标识
+        module_hot = self._calculate_module_hot(items)
 
         for key, label in FOOTER_MODULES.items():
             content = footer.get(key, '')
@@ -169,11 +172,45 @@ class FeishuBotPusher:
             if not lines:
                 continue
 
-            head = f'{label}：{lines[0]}'
+            # 添加热度标识
+            hot_mark = module_hot.get(key, '')
+            head = f'{label}{hot_mark}：{lines[0]}'
             tail = '\n'.join(lines[1:])
             paragraphs.append(head if not tail else f'{head}\n{tail}')
 
         return paragraphs
+
+    def _calculate_module_hot(self, items: list) -> dict:
+        """计算每个模块的热度标识"""
+        topic_to_module = {
+            '大模型': 'model',
+            'AI硬件': 'hardware',
+            '行业应用': 'application',
+            '投融资': 'investment',
+            '政策监管': 'policy',
+        }
+
+        # 统计每个模块的热度
+        module_hot_counts = {key: [] for key in FOOTER_MODULES.keys()}
+
+        for item in items:
+            sub_topic = item.get('sub_topic', '')
+            module_id = topic_to_module.get(sub_topic, 'unknown')
+            if module_id in module_hot_counts:
+                hot = item.get('hot', '')
+                if hot:
+                    # 提取火焰数量
+                    fire_count = hot.count('🔥')
+                    module_hot_counts[module_id].append(fire_count)
+
+        # 计算每个模块的最高热度
+        result = {}
+        for module_id, counts in module_hot_counts.items():
+            if counts:
+                max_fire = max(counts)
+                result[module_id] = ' ' + '🔥' * max_fire
+
+        return result
 
     def _validate_payload(self, payload: dict) -> None:
         """验证 payload 大小"""

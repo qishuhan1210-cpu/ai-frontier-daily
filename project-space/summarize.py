@@ -18,7 +18,7 @@ class SummarizeModule(BaseModule):
     """LLM 摘要"""
 
     TEMPLATE = 'summarizer.md.j2'
-    KEYS = ('headline', 'plain_explain', 'impact_1', 'impact_2', 'digest_for_outline', 'tag')
+    KEYS = ('headline', 'plain_explain', 'impact_1', 'impact_2', 'digest_for_outline', 'tag', 'hot')
 
     def __init__(self, date_str: str):
         super().__init__(date_str, 'summarize')
