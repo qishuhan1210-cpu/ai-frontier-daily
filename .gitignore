@@ -38,6 +38,7 @@ TODO&CHANGELOG.md
 *.bak
 *.origin
 
+.vscode/
 .agents
 .claude
 .codebuddy

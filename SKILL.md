@@ -137,42 +137,6 @@ python3 project-space/push_feishu_bot.py \
 | **敏感信息**（API Key、Webhook） | `config/secrets.json` | ❌ 否（已 gitignore） |
 | **发布目标**（知识库 space_id、parent_token） | 对话上下文 | 由大模型自行判断 |
 
-### 5.1 首次配置
-
-1. **复制敏感配置模板**：
-   ```bash
-   cp config/secrets.example.json config/secrets.json
-   ```
-
-2. **编辑 `config/secrets.json`**，填入你的真实值：
-   ```json
-   {
-     "llm": {
-       "api_key": "sk-your-real-api-key",
-       "base_url": "https://api.deepseek.com",
-       "model_name": "deepseek-chat"
-     },
-     "feishu": {
-       "bot_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook-token"
-     }
-   }
-   ```
-
-   **注意**：飞书知识库发布目标（`space_id`、`parent_node_token`）不在配置文件中，由大模型根据对话上下文自行判断。详见 `extension/post-runbook.md`。
-
-### 5.2 配置索引
-
-| 需求 | 位置 |
-|------|------|
-| 发布后流程（含 Webhook、知识库发布） | `extension/post-runbook.md` |
-| RSS 来源、模块、去重策略 | `project-space/config/config.json` |
-| LLM API（Key/BaseUrl/Model）| `config/secrets.json` |
-| Webhook | `config/secrets.json` → `project-space/push_feishu_bot.py` |
-| 知识库发布目标 | 大模型根据对话上下文自行判断 |
-| 筛选排序提示词 | `project-space/prompts/filter_ranker.md.j2` |
-| 摘要提示词 | `project-space/prompts/summarizer.md.j2` |
-| 早报模板 | `project-space/config/briefing-template.md.j2` |
-
 ---
 
 ## 6. 异常速查
@@ -196,5 +160,3 @@ python3 project-space/push_feishu_bot.py \
 | `llm.api_key` | LLM API 认证 | `config/secrets.json`（gitignore） |
 | `feishu.bot_webhook` | 飞书群机器人推送 | `config/secrets.json`（gitignore） |
 | 知识库 `space_id` / `parent_node_token` | 飞书知识库发布目标 | 大模型根据对话上下文自行判断 |
-
-**注意**：`config/secrets.example.json` 是模板文件（可提交），`config/secrets.json` 是真实配置（已 gitignore）。
