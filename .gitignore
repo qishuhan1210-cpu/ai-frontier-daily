@@ -6,6 +6,7 @@ __pycache__/
 dist/
 build/
 .eggs/
+.idea/
 
 # 测试与覆盖率
 .pytest_cache/
@@ -36,3 +37,16 @@ TODO&CHANGELOG.md
 *.tmp
 *.bak
 *.origin
+
+.agents
+.claude
+.codebuddy
+.continue
+.junie
+.kiro
+.qoder
+.qwen
+.trae
+skills
+skills-lock.json
+.idea/

@@ -31,7 +31,10 @@
     "recent_summary_enabled": true,
     "recent_summary_days": 3,
     "recent_summary_title_threshold": 0.90,
-    "recent_summary_text_threshold": 0.45
+    "recent_summary_text_threshold": 0.45,
+    "hot_topic_enabled": true,
+    "hot_topic_days": 3,
+    "hot_topic_repeat_threshold": 0.75
   },
   "sources": {
     "tier1": [
@@ -66,6 +69,30 @@
     "url_patterns": {
       "allowed": ["/detail/", "/p/", "/newsDetail_", "/article/", "/info/", "/a/"],
       "forbidden": ["/index", "/list", "/channel", "/topic", "/home", "/user"]
+    },
+    "filter_keywords": {
+      "exclude": ["基金", "股票", "股市", "A股", "涨停", "跌停", "融资融券", "ETF", "债券", "理财", "保险", "房贷", "车贷", "新能源汽车", "手机", "消费电子", "家电", "房地产", "房价"]
+    }
+  },
+  "tags": {
+    "candidates": [
+      "#企业硬件",
+      "#协议基建",
+      "#AI落地",
+      "#地缘政治",
+      "#大模型",
+      "#AI工程",
+      "#产业商业",
+      "#政策监管",
+      "#开源生态",
+      "#AI安全"
+    ],
+    "tag_mapping": {
+      "hardware": ["#企业硬件"],
+      "model": ["#大模型"],
+      "ai_engineering": ["#AI工程", "#协议基建"],
+      "industry": ["#产业商业", "#AI落地"],
+      "policy": ["#政策监管", "#地缘政治", "#AI安全"]
     }
   },
   "assembly": {

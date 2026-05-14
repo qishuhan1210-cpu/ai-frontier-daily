@@ -1,6 +1,6 @@
 {# AI 前沿早报渲染模板 — 版式与固定文案在此维护；业务数据由 assemble 脚本注入。 #}
 {% macro news_item(it) -%}
-### {{ it.number }}. {{ it.headline }}
+### {{ it.number }}. {{ it.headline }} {% if it.hot %}{{ it.hot }}{% endif %}
 
 **标签：** {{ it.tag }}
 

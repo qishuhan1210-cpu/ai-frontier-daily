@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 from utils.base_config import load_llm_config
@@ -57,6 +58,11 @@ class LLMClient:
         cfg = self._load_config()
         model = cfg["model_name"]
 
+        # 计算输入 token 数量（粗略估算）
+        input_tokens = len(system) + len(user)
+        print(f"[LLMClient] 请求: model={model}, temp={temperature}, max_tokens={max_tokens}, 输入约 {input_tokens} 字符")
+
+        start_time = time.time()
         try:
             resp = client.chat.completions.create(
                 model=model,
@@ -67,8 +73,13 @@ class LLMClient:
                     {"role": "user", "content": user},
                 ],
             )
+            elapsed = time.time() - start_time
+            output_tokens = len(resp.choices[0].message.content) if resp.choices else 0
+            print(f"[LLMClient] 响应: 耗时 {elapsed:.2f}s, 输出约 {output_tokens} 字符")
             return resp.choices[0].message.content
         except Exception as e:
+            elapsed = time.time() - start_time
+            print(f"[LLMClient] 失败: 耗时 {elapsed:.2f}s, 错误: {e}")
             raise RuntimeError(f"LLM 调用失败: {e}") from e
 
     def call_json(self, system: str, user: str, temperature: float = 0.3, max_tokens: int = 20480) -> dict[str, Any]:

@@ -52,7 +52,8 @@ class AssembleModule(BaseModule):
             'plain_explain': it.get('plain_explain', ''),
             'impact_1': it.get('impact_1', ''),
             'impact_2': it.get('impact_2', ''),
-        }
+            'hot': it.get('hot', ''),
+                   }
 
     def _group_items(self, items: List[dict]) -> dict:
         """按 sub_topic 分组"""
@@ -91,8 +92,20 @@ class AssembleModule(BaseModule):
         sections = []
         for i, m in enumerate(self.modules, 1):
             mod_items = groups.get(m['id'], [])[:8]  # 每模块最多8条
-            entries = [self._news_row(f"{i}.{j+1}", it, cap) for j, it in enumerate(mod_items)]
-            sections.append({'heading': f"## {m['name']}\n", 'empty': not mod_items, 'entries': entries})
+            # 过滤掉白话解释和影响字段都为空的条目
+            filtered_items = []
+            for it in mod_items:
+                has_plain = bool(it.get('plain_explain'))
+                has_impact1 = bool(it.get('impact_1'))
+                has_impact2 = bool(it.get('impact_2'))
+                if has_plain or has_impact1 or has_impact2:
+                    filtered_items.append(it)
+                else:
+                    # 打印被过滤的原因
+                    title = it.get('title', '无标题')
+                    print(f"[过滤] [{m['name']}] 标题: {title[:50]}... 原因: plain_explain={has_plain}, impact_1={has_impact1}, impact_2={has_impact2}")
+            entries = [self._news_row(f"{i}.{j+1}", it, cap) for j, it in enumerate(filtered_items)]
+            sections.append({'heading': f"## {m['name']}\n", 'empty': not filtered_items, 'entries': entries})
 
         # footer
         footer_rows = []

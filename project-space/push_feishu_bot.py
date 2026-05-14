@@ -3,10 +3,16 @@
 """
 push_feishu_bot.py — §4 群机器人：交互式卡片推送
 
-组装 `msg_type: interactive` 请求体，POST 至飞书自定义机器人 Webhook。
+支持两种推送方式，**使用相同的卡片格式**：
+1. 飞书自定义机器人 Webhook（交互式卡片）
+2. lark-cli（交互式卡片）
 
 用法:
-    python3 project-space/push_feishu_bot.py --date 2026-05-04 --doc-url 'https://xxx.feishu.cn/…'
+    # 使用 Webhook 推送交互式卡片
+    python3 project-space/push_feishu_bot.py --date 2026-05-11 --doc-url 'https://xxx.feishu.cn/…'
+    
+    # 使用 lark-cli 推送交互式卡片（格式与 Webhook 一致）
+    python3 project-space/push_feishu_bot.py --date 2026-05-11 --doc-url 'https://xxx.feishu.cn/…' --use-lark-cli
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -56,7 +63,9 @@ class PushConfig:
     date: str
     doc_url: str
     summary_path: Path
-    webhook: str
+    webhook: str | None
+    chat_id: str | None
+    use_lark_cli: bool
 
 
 @dataclass(frozen=True)
@@ -86,12 +95,19 @@ class FeishuBotPusher:
         try:
             payload = self._build_payload()
             self._validate_payload(payload)
-            response = self._send_webhook(payload)
+
+            if self.cfg.use_lark_cli:
+                response = self._send_via_lark_cli(payload)
+            else:
+                response = self._send_webhook(payload)
+
             return PushResult(success=True, message='推送成功', response=response)
         except FileNotFoundError as e:
             return PushResult(success=False, message=f'文件不存在: {e}')
         except ValueError as e:
             return PushResult(success=False, message=f'校验失败: {e}')
+        except RuntimeError as e:
+            return PushResult(success=False, message=str(e))
         except urllib.error.HTTPError as e:
             return PushResult(success=False, message=f'HTTP {e.code}: {e.reason}')
         except urllib.error.URLError as e:
@@ -106,7 +122,7 @@ class FeishuBotPusher:
     def _build_payload(self) -> dict[str, Any]:
         """构建飞书交互式卡片 payload"""
         summary = self._load_summary()
-        paragraphs = self._build_paragraphs(summary.get('blocks', {}))
+        paragraphs = self._build_paragraphs(summary.get('blocks', {}), summary.get('items', []))
 
         elements = [
             {'tag': 'div', 'text': {'tag': 'lark_md', 'content': p}}
@@ -139,10 +155,13 @@ class FeishuBotPusher:
         with open(self.cfg.summary_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
-    def _build_paragraphs(self, blocks: dict) -> list[str]:
-        """从 blocks.footer 构建段落列表"""
+    def _build_paragraphs(self, blocks: dict, items: list) -> list[str]:
+        """从 blocks.footer 构建段落列表，包含热度标识"""
         footer = blocks.get('footer', {})
         paragraphs = []
+
+        # 计算每个模块的热度标识
+        module_hot = self._calculate_module_hot(items)
 
         for key, label in FOOTER_MODULES.items():
             content = footer.get(key, '')
@@ -153,11 +172,45 @@ class FeishuBotPusher:
             if not lines:
                 continue
 
-            head = f'{label}：{lines[0]}'
+            # 添加热度标识
+            hot_mark = module_hot.get(key, '')
+            head = f'{label}{hot_mark}：{lines[0]}'
             tail = '\n'.join(lines[1:])
             paragraphs.append(head if not tail else f'{head}\n{tail}')
 
         return paragraphs
+
+    def _calculate_module_hot(self, items: list) -> dict:
+        """计算每个模块的热度标识"""
+        topic_to_module = {
+            '大模型': 'model',
+            'AI硬件': 'hardware',
+            '行业应用': 'application',
+            '投融资': 'investment',
+            '政策监管': 'policy',
+        }
+
+        # 统计每个模块的热度
+        module_hot_counts = {key: [] for key in FOOTER_MODULES.keys()}
+
+        for item in items:
+            sub_topic = item.get('sub_topic', '')
+            module_id = topic_to_module.get(sub_topic, 'unknown')
+            if module_id in module_hot_counts:
+                hot = item.get('hot', '')
+                if hot:
+                    # 提取火焰数量
+                    fire_count = hot.count('🔥')
+                    module_hot_counts[module_id].append(fire_count)
+
+        # 计算每个模块的最高热度
+        result = {}
+        for module_id, counts in module_hot_counts.items():
+            if counts:
+                max_fire = max(counts)
+                result[module_id] = ' ' + '🔥' * max_fire
+
+        return result
 
     def _validate_payload(self, payload: dict) -> None:
         """验证 payload 大小"""
@@ -182,6 +235,40 @@ class FeishuBotPusher:
             raw = resp.read().decode('utf-8')
             return json.loads(raw) if raw.strip() else {}
 
+    def _send_via_lark_cli(self, payload: dict) -> dict:
+        """使用 lark-cli 发送交互式卡片"""
+        chat_id = self.cfg.chat_id
+        if not chat_id:
+            chat_id = self._load_chat_id_from_secrets()
+
+        if not chat_id:
+            raise ValueError('缺少 chat-id 配置')
+
+        cmd = [
+            'lark-cli', 'im', '+messages-send',
+            '--chat-id', chat_id,
+            '--msg-type', 'interactive',
+            '--content', json.dumps(payload['card'], ensure_ascii=False)
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f'lark-cli 推送失败: {result.stderr or result.stdout}')
+
+        raw = result.stdout.strip()
+        return json.loads(raw) if raw else {}
+
+    def _load_chat_id_from_secrets(self) -> str | None:
+        """从 secrets.json 加载 chat_id"""
+        secrets = load_secrets()
+        return secrets.get('feishu', {}).get('chat_id', '').strip()
+
 
 # =============================================================================
 # 配置工厂
@@ -193,7 +280,8 @@ class ConfigFactory:
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> PushConfig:
         """从命令行参数创建配置"""
-        webhook = cls._load_webhook_from_secrets()
+        webhook = cls._load_webhook_from_secrets() if not args.use_lark_cli else None
+        chat_id = args.chat_id or cls._load_chat_id_from_secrets() if args.use_lark_cli else None
         summary_path = cls._resolve_summary_path(args.date, args.summary_json)
 
         return PushConfig(
@@ -201,6 +289,8 @@ class ConfigFactory:
             doc_url=args.doc_url,
             summary_path=summary_path,
             webhook=webhook,
+            chat_id=chat_id,
+            use_lark_cli=args.use_lark_cli,
         )
 
     @staticmethod
@@ -211,6 +301,12 @@ class ConfigFactory:
         if not webhook:
             raise ValueError('config/secrets.json 缺少 feishu.bot_webhook 配置')
         return webhook
+
+    @staticmethod
+    def _load_chat_id_from_secrets() -> str | None:
+        """从 secrets.json 加载 chat_id"""
+        secrets = load_secrets()
+        return secrets.get('feishu', {}).get('chat_id', '').strip()
 
     @staticmethod
     def _resolve_summary_path(date: str, custom_path: str | None) -> Path:
@@ -232,16 +328,24 @@ class ConfigFactory:
 def create_parser() -> argparse.ArgumentParser:
     """创建参数解析器"""
     parser = argparse.ArgumentParser(
-        description='飞书自定义机器人：推送 AI 前沿早报交互式卡片',
+        description='飞书推送：AI 前沿早报（支持 Webhook 和 lark-cli 两种方式）',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
-示例:
+        epilog='''示例:
+  # 使用 Webhook 推送交互式卡片
   %(prog)s --date 2026-05-11 --doc-url 'https://xxx.feishu.cn/...'
+  
+  # 使用 lark-cli 推送交互式卡片（格式与 Webhook 一致）
+  %(prog)s --date 2026-05-11 --doc-url 'https://xxx.feishu.cn/...' --use-lark-cli
+  
+  # 指定 chat-id
+  %(prog)s --date 2026-05-11 --doc-url 'https://xxx.feishu.cn/...' --use-lark-cli --chat-id oc_xxx
         '''.strip()
     )
     parser.add_argument('--date', required=True, help='日期 (YYYY-MM-DD)')
     parser.add_argument('--doc-url', required=True, help='飞书文档 URL')
     parser.add_argument('--summary-json', help='自定义 summary.json 路径')
+    parser.add_argument('--use-lark-cli', action='store_true', help='使用 lark-cli 推送（默认使用 Webhook）')
+    parser.add_argument('--chat-id', help='飞书群聊 ID（使用 lark-cli 时必填，或在 secrets.json 中配置）')
     return parser
 
 
@@ -260,7 +364,9 @@ def main() -> int:
     result = pusher.push()
 
     if result.success:
-        print(json.dumps(result.response, ensure_ascii=False, indent=2))
+        print(f'success: {result.message}')
+        if result.response:
+            print(json.dumps(result.response, ensure_ascii=False, indent=2))
         return 0
     else:
         print(f'error: {result.message}', file=sys.stderr)
