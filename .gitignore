@@ -6,7 +6,7 @@ __pycache__/
 dist/
 build/
 .eggs/
-.idea
+.idea/
 
 # 测试与覆盖率
 .pytest_cache/
@@ -49,3 +49,4 @@ TODO&CHANGELOG.md
 .trae
 skills
 skills-lock.json
+.idea/
