@@ -8,29 +8,20 @@ import re
 import time
 from typing import Any
 
-from utils.base_config import load_llm_config
-
 
 class LLMClient:
     """LLM 客户端 - 封装 OpenAI 兼容 API 调用"""
 
-    def __init__(self):
-        self._config: dict[str, Any] | None = None
+    def __init__(self, llm_cfg: dict[str, Any]):
+        self._cfg = llm_cfg
         self._client: Any | None = None
-
-    def _load_config(self) -> dict[str, Any] | None:
-        """加载 LLM 配置"""
-        if self._config is not None:
-            return self._config
-        self._config = load_llm_config()
-        return self._config
 
     def _get_client(self) -> Any | None:
         """获取 OpenAI 客户端实例"""
         if self._client is not None:
             return self._client
 
-        cfg = self._load_config()
+        cfg = self._cfg
         if not cfg:
             print("[LLMClient] 错误: 无法加载 LLM 配置")
             return None
@@ -52,13 +43,15 @@ class LLMClient:
             print(f"[LLMClient] 错误: 客户端初始化失败: {e}")
             return None
 
-    def call(self, system: str, user: str, temperature: float = 0.3, max_tokens: int = 2000) -> str:
+    def call(self, system: str, user: str, temperature: float | None = None, max_tokens: int | None = None) -> str:
         """调用 LLM，返回文本（失败时抛异常）"""
+        if temperature is None:
+            temperature = self._cfg.get('default_temperature', 0.3)
+        if max_tokens is None:
+            max_tokens = self._cfg.get('default_max_tokens', 2000)
         client = self._get_client()
-        cfg = self._load_config()
-        model = cfg["model_name"]
+        model = self._cfg["model_name"]
 
-        # 计算输入 token 数量（粗略估算）
         input_tokens = len(system) + len(user)
         print(f"[LLMClient] 请求: model={model}, temp={temperature}, max_tokens={max_tokens}, 输入约 {input_tokens} 字符")
 
@@ -82,40 +75,27 @@ class LLMClient:
             print(f"[LLMClient] 失败: 耗时 {elapsed:.2f}s, 错误: {e}")
             raise RuntimeError(f"LLM 调用失败: {e}") from e
 
-    def call_json(self, system: str, user: str, temperature: float = 0.3, max_tokens: int = 20480) -> dict[str, Any]:
+    def call_json(self, system: str, user: str, temperature: float | None = None, max_tokens: int | None = None) -> dict[str, Any]:
         """调用 LLM，自动解析 JSON 返回（解析失败时抛异常）"""
+        if temperature is None:
+            temperature = self._cfg.get('default_temperature', 0.3)
+        if max_tokens is None:
+            max_tokens = self._cfg.get('default_max_tokens', 20480)
         content = self.call(system, user, temperature, max_tokens)
 
-        # 尝试从 markdown 代码块提取
         if match := re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content):
             try:
                 return json.loads(match.group(1))
             except json.JSONDecodeError:
                 pass
 
-        # 尝试直接解析任意 JSON 对象
         if match := re.search(r'\{[\s\S]*\}', content):
             try:
                 return json.loads(match.group())
             except json.JSONDecodeError:
                 pass
 
-        # 尝试直接解析整个内容
         try:
             return json.loads(content)
         except json.JSONDecodeError as e:
             raise RuntimeError(f"LLM 返回内容 JSON 解析失败: {e}\n内容片段: {content[:200]}...") from e
-
-
-# 模块级便捷函数
-def call_llm(system: str, user: str, temperature: float = 0.3, max_tokens: int = 2000) -> str | None:
-    """调用 LLM（便捷函数）"""
-    return LLMClient().call(system, user, temperature, max_tokens)
-
-
-def call_llm_json(system: str, user: str, temperature: float = 0.3, max_tokens: int = 20480) -> dict[str, Any] | None:
-    """调用 LLM 并解析 JSON（便捷函数）"""
-    return LLMClient().call_json(system, user, temperature, max_tokens)
-
-
-__all__ = ["LLMClient", "call_llm", "call_llm_json"]

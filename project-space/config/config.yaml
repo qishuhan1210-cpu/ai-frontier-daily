@@ -1,0 +1,57 @@
+# AI Frontier Daily 配置文件
+# 版本：2.2
+# 更新日期：2026-05-15
+
+public_feeds:
+  settings:
+    timeout_seconds: 20
+    max_retries: 3
+    max_items_per_feed: 100
+    max_items_total: 1000
+    user_agent: "Mozilla/5.0 (compatible; AIFrontierDaily/1.0; +https://github.com/YOUR_GITHUB_OR_USER/ai-frontier-daily)"
+    retry_backoff_seconds: 1.5
+    url_blacklist_patterns: ["/index", "/list", "/channel", "/topic", "/home", "/user", "page="]
+    time_window_hours: 48
+  feeds:
+    - {source: "36氪", url: "https://36kr.com/feed", verify_tls: true}
+    - {source: "雷锋网", url: "https://www.leiphone.com/feed", verify_tls: true}
+    - {source: "极客公园", url: "https://www.geekpark.net/rss", verify_tls: true}
+    - {source: "IT之家", url: "https://www.ithome.com/rss/", verify_tls: true}
+    - {source: "量子位", url: "https://www.qbitai.com/feed", verify_tls: true}
+    - {source: "InfoQ中文", url: "https://www.infoq.cn/feed", verify_tls: true}
+    - {source: "开源中国", url: "https://www.oschina.net/news/rss", verify_tls: true}
+    - {source: "机器之心", url: "https://www.jiqizhixin.com/rss", verify_tls: false}
+
+dedup:
+  title_similarity_threshold: 0.88
+  word_ngram_n: 3
+  char_ngram_n: 3
+  recent_summary_enabled: true
+  recent_summary_days: 3
+  recent_summary_title_threshold: 0.90
+  recent_summary_text_threshold: 0.45
+  outline_fingerprint_max_chars: 1600
+  persistent_days_threshold: 4
+
+llm:
+  default_temperature: 0.3
+  default_max_tokens: 2000
+  filter_rank_max_tokens: 8192
+  summarize_max_tokens: 20480
+  summarize_item_cap: 1800
+  summarize_keys: [headline, plain_explain, impact_1, impact_2, digest_for_outline, tag, hot]
+
+filter_rank:
+  max_news_per_topic: 10
+
+assembly:
+  modules:
+    - {id: "model", name: "大模型"}
+    - {id: "hardware", name: "AI硬件"}
+    - {id: "application", name: "行业应用"}
+    - {id: "investment", name: "投融资"}
+    - {id: "policy", name: "政策监管"}
+  max_news_per_module: 8
+  summary_max_chars: 500
+  summary_unified_max_items: 120
+  footer_max_lines_per_module: 3

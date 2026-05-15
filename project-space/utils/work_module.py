@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-utils/base.py — 模块基类和通用工具
+utils/work_module.py — 工作流模块基类和通用工具
 
 为 ingest/summarize/assemble 提供公共基础设施
 """
 
 from __future__ import annotations
 
-import html
 import json
 import os
 import re
@@ -16,8 +15,8 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 
-class BaseModule(ABC):
-    """流水线模块基类"""
+class WorkModule(ABC):
+    """流水线工作流模块基类"""
 
     def __init__(self, date_str: str, name: str):
         self.date_str = date_str
@@ -74,58 +73,9 @@ class BaseModule(ABC):
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     @staticmethod
-    def strip_html(raw: Optional[str], limit: int = 4000) -> str:
-        """去除 HTML 标签"""
-        if not raw:
-            return ''
-        text = re.sub(r'<[^>]+>', ' ', raw)
-        text = html.unescape(text)
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text[:limit]
-
-    @staticmethod
     def clip_text(text: str, max_chars: int, suffix: str = '…') -> str:
         """截断文本"""
         t = re.sub(r'\s+', ' ', (text or '').strip())
         if len(t) <= max_chars:
             return t
         return t[:max_chars - len(suffix)] + suffix
-
-    @staticmethod
-    def is_placeholder(text: str, patterns: tuple = ('点击查看原文', 'click to read', 'read more')) -> bool:
-        """判断是否为占位符文本"""
-        if not text:
-            return True
-        t = text.strip()
-        if len(t) < 6:
-            return True
-        low = t.lower()
-        for p in patterns:
-            if p in t or p.lower() in low:
-                return True
-        return False
-
-    @staticmethod
-    def similarity_tokens(text: str, word_n: int = 3, char_n: int = 3) -> set:
-        """生成文本的相似度 token（n-gram）"""
-        text = (text or '').lower().strip()
-        if not text:
-            return set()
-        tokens = []
-        words = text.split()
-        if word_n >= 1 and len(words) >= word_n:
-            for i in range(len(words) - word_n + 1):
-                tokens.append(' '.join(words[i:i + word_n]))
-        if char_n >= 1 and len(text) >= char_n:
-            for i in range(len(text) - char_n + 1):
-                tokens.append(text[i:i + char_n])
-        return set(tokens)
-
-    @staticmethod
-    def jaccard_similarity(set_a: set, set_b: set) -> float:
-        """计算 Jaccard 相似度"""
-        if not set_a or not set_b:
-            return 0.0
-        intersection = len(set_a & set_b)
-        union = len(set_a | set_b)
-        return intersection / union if union > 0 else 0.0

@@ -1,8 +1,26 @@
-# 「AI 前沿早报」项目优化 - TODO & CHANGELOG
+## 变更日志
 
-## 📋 TODO List
+### 2026-05-15 (commit: -)，作者：wghlmg1210
 
-## 📝 CHANGELOG
+#### 研发工程
+
+- **base_config** - 重构配置系统，分散加载函数统一为 AppConfig + ConfigDict
+  - 新增 AppConfig，统一管理 feeds/dedup/llm/filter_rank/assembly 配置
+  - 新增 ConfigDict，支持点访问配置值
+  - 新增模板路径常量 TEMPLATE_BRIEFING/FILTER_RANK/SUMMARIZE
+  - 删除所有 load_xxx() 分散配置函数
+- **config** - 重构，JSON 迁移至 YAML；新增 llm、filter_rank 配置段
+- **utils/__init__** - 重构导出：BaseModule→WorkModule；新增 AppConfig/ConfigDict/TemplateRenderer
+- **prompt_loader** - 新增 TemplateRenderer；新增 render_and_parse 方法
+- **work_module** - 新增，原 base.BaseModule 重命名迁移
+- **assemble** - 重构，接入 AppConfig 与 TemplateRenderer；删除向后兼容函数
+- **filter_rank** - 重构，接入 AppConfig；配置项动态化；删除向后兼容函数
+- **ingest** - 重构，接入 AppConfig；移除分散配置调用
+- **summarize** - 重构，接入 AppConfig；LLM 参数配置化；删除向后兼容函数
+- **test_config** - 新增 AppConfig 自测脚本
+- **test_config_classes** - 新增配置类单元测试
+- **.gitignore** - 新增 CHANGELOG.md、todolist/ 忽略规则
+- **TODO&CHANGELOG** - 删除，拆分为独立文件管理
 
 ### v1.1.0 - 2026-05-11
 - **内容层优化**

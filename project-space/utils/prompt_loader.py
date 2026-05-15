@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""提示词加载器 - 基于 Jinja2 模板渲染"""
+"""模板与提示词加载器"""
 
 from __future__ import annotations
 
@@ -8,31 +8,44 @@ from pathlib import Path
 from typing import Any
 
 
-class PromptLoader:
-    """提示词加载器 - 通用模板渲染"""
+class TemplateRenderer:
+    """模板渲染器 - 基础模板加载和渲染"""
 
-    DEFAULT_PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
-
-    def __init__(self, prompt_dir: Path | None = None):
-        """
-        Args:
-            prompt_dir: 模板目录，默认 project-space/prompts/
-        """
-        self.prompt_dir = prompt_dir or self.DEFAULT_PROMPT_DIR
-
-    def load_file(self, template_name: str) -> str | None:
-        """加载模板文件内容"""
-        path = self.prompt_dir / template_name
+    @staticmethod
+    def load_file(path: Path) -> str | None:
+        """读取模板文件内容"""
         if not path.exists():
             return None
         return path.read_text(encoding="utf-8")
 
     @staticmethod
+    def render_simple(template: str, context: dict[str, Any]) -> str:
+        """简单模板渲染（无 jinja2 时回退）"""
+        result = template
+        for key, value in context.items():
+            if isinstance(value, str):
+                result = result.replace(f"{{{{ {key} }}}}", value)
+        return result
+
+    def render(self, path: Path, context: dict[str, Any]) -> str | None:
+        """渲染模板"""
+        template = self.load_file(path)
+        if not template:
+            return None
+
+        try:
+            from jinja2 import Template
+            return Template(template).render(**context)
+        except ImportError:
+            return self.render_simple(template, context)
+
+
+class PromptLoader(TemplateRenderer):
+    """提示词加载器 - 扩展模板渲染，支持 frontmatter 解析"""
+
+    @staticmethod
     def parse_frontmatter(content: str) -> dict[str, str]:
-        """
-        解析 frontmatter 格式
-        格式: ---\nkey: |\n  value...\n---
-        """
+        """解析 frontmatter 格式"""
         parts = {}
         match = re.search(r'^---\s*\n(.*?)\n---\s*$', content, re.DOTALL | re.MULTILINE)
         if not match:
@@ -46,36 +59,8 @@ class PromptLoader:
 
         return parts
 
-    @staticmethod
-    def render_simple(template: str, context: dict[str, Any]) -> str:
-        """简单模板渲染（无 jinja2 时回退）"""
-        result = template
-        for key, value in context.items():
-            if isinstance(value, str):
-                result = result.replace(f"{{{{ {key} }}}}", value)
-        return result
-
-    def render(self, template_name: str, context: dict[str, Any]) -> str | None:
-        """
-        渲染模板
-
-        Args:
-            template_name: 模板文件名
-            context: 模板变量
-
-        Returns:
-            渲染后的内容，或 None
-        """
-        template = self.load_file(template_name)
-        if not template:
-            return None
-
-        # 尝试 jinja2 渲染
-        try:
-            from jinja2 import Template
-            return Template(template).render(**context)
-        except ImportError:
-            return self.render_simple(template, context)
-
-
-__all__ = ["PromptLoader"]
+    def render_and_parse(self, path: Path, context: dict[str, Any]) -> tuple[str, str]:
+        """渲染模板并解析 frontmatter"""
+        rendered = self.render(path, context)
+        parts = self.parse_frontmatter(rendered or '')
+        return parts.get('system', ''), parts.get('user', '')

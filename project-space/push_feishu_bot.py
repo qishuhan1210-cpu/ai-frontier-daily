@@ -35,21 +35,13 @@ for p in (_PROJECT_ROOT, _PROJECT_SPACE):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from utils.base_config import default_day_paths, load_assembly_config, load_secrets
+from utils import AppConfig
 
 
 # =============================================================================
 # 常量配置
 # =============================================================================
 
-# footer 字段顺序与模块中文简称映射
-FOOTER_MODULES = {
-    'hardware': '硬件',
-    'model': '模型',
-    'application': '应用',
-    'investment': '投融资',
-    'policy': '政策',
-}
 MAX_BODY_BYTES = 20 * 1024
 
 
@@ -85,6 +77,9 @@ class FeishuBotPusher:
 
     def __init__(self, config: PushConfig):
         self.cfg = config
+        app_config = AppConfig()
+        self.footer_modules = {m.id: m.name[:2] for m in app_config.assembly.modules}
+        self.topic_to_module = {m.name: m.id for m in app_config.assembly.modules}
 
     # -------------------------------------------------------------------------
     # 公共接口
@@ -163,7 +158,7 @@ class FeishuBotPusher:
         # 计算每个模块的热度标识
         module_hot = self._calculate_module_hot(items)
 
-        for key, label in FOOTER_MODULES.items():
+        for key, label in self.footer_modules.items():
             content = footer.get(key, '')
             if not content or not str(content).strip():
                 continue
@@ -182,24 +177,14 @@ class FeishuBotPusher:
 
     def _calculate_module_hot(self, items: list) -> dict:
         """计算每个模块的热度标识"""
-        topic_to_module = {
-            '大模型': 'model',
-            'AI硬件': 'hardware',
-            '行业应用': 'application',
-            '投融资': 'investment',
-            '政策监管': 'policy',
-        }
-
-        # 统计每个模块的热度
-        module_hot_counts = {key: [] for key in FOOTER_MODULES.keys()}
+        module_hot_counts = {key: [] for key in self.footer_modules.keys()}
 
         for item in items:
             sub_topic = item.get('sub_topic', '')
-            module_id = topic_to_module.get(sub_topic, 'unknown')
+            module_id = self.topic_to_module.get(sub_topic, 'unknown')
             if module_id in module_hot_counts:
                 hot = item.get('hot', '')
                 if hot:
-                    # 提取火焰数量
                     fire_count = hot.count('🔥')
                     module_hot_counts[module_id].append(fire_count)
 
@@ -266,8 +251,7 @@ class FeishuBotPusher:
 
     def _load_chat_id_from_secrets(self) -> str | None:
         """从 secrets.json 加载 chat_id"""
-        secrets = load_secrets()
-        return secrets.get('feishu', {}).get('chat_id', '').strip()
+        return AppConfig()._feishu_config.get('chat_id', '').strip()
 
 
 # =============================================================================
@@ -296,8 +280,8 @@ class ConfigFactory:
     @staticmethod
     def _load_webhook_from_secrets() -> str:
         """从 secrets.json 加载 webhook"""
-        secrets = load_secrets()
-        webhook = secrets.get('feishu', {}).get('bot_webhook', '').strip()
+        feishu_cfg = AppConfig()._feishu_config
+        webhook = feishu_cfg.get('bot_webhook', '').strip()
         if not webhook:
             raise ValueError('config/secrets.json 缺少 feishu.bot_webhook 配置')
         return webhook
@@ -305,8 +289,7 @@ class ConfigFactory:
     @staticmethod
     def _load_chat_id_from_secrets() -> str | None:
         """从 secrets.json 加载 chat_id"""
-        secrets = load_secrets()
-        return secrets.get('feishu', {}).get('chat_id', '').strip()
+        return AppConfig()._feishu_config.get('chat_id', '').strip()
 
     @staticmethod
     def _resolve_summary_path(date: str, custom_path: str | None) -> Path:
@@ -314,7 +297,7 @@ class ConfigFactory:
         if custom_path:
             path = Path(custom_path)
         else:
-            path = default_day_paths(date)['summary']
+            path = AppConfig().day_paths(date)['summary']
 
         if not path.exists():
             raise FileNotFoundError(f'找不到 {path}')

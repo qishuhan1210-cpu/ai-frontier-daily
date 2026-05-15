@@ -12,36 +12,33 @@ import copy
 import json
 from typing import List
 
-from utils import PROMPTS_DIR, LLMClient, load_assembly_config
-from utils.base import BaseModule
-from utils.prompt_loader import PromptLoader
+from utils import AppConfig, LLMClient, WorkModule, PromptLoader, TEMPLATE_FILTER_RANK
 
 
-class FilterRankModule(BaseModule):
+class FilterRankModule(WorkModule):
     """智能筛选与优先级排序"""
 
-    TEMPLATE = 'filter_ranker.md.j2'
-    VALID_SUB_TOPICS = {'大模型', 'AI硬件', '行业应用', '投融资', '政策监管'}
 
-    def __init__(self, date_str: str):
+
+    def __init__(self, date_str: str, config: AppConfig):
         super().__init__(date_str, 'filter_rank')
-        self.llm_client = LLMClient()
+        self.llm_client = LLMClient(config.llm_client_cfg)
+        self._app_config = config
+        self.valid_sub_topics = {m.name for m in config.assembly.modules}
+        self.max_news_per_topic = config.filter_rank.max_news_per_topic
 
     def _build_prompts(self, items: List[dict]) -> tuple:
         """构建 system/user 提示词"""
-        cfg = load_assembly_config()
-        coverage = cfg.get('header_coverage', '硬件芯片 · 模型 · AI工程 · 产业商业 · 政策地缘')
+        coverage = self._app_config.header_coverage
 
         rows = [{'index': i, 'title': it.get('title', ''), 'source': it.get('source', ''),
                  'url': it.get('url', ''), 'update_time': it.get('pub_time', '')}
                 for i, it in enumerate(items)]
 
-        loader = PromptLoader(PROMPTS_DIR)
+        loader = PromptLoader()
         ctx = {'date_str': self.date_str, 'coverage': coverage,
                'news_json': json.dumps(rows, ensure_ascii=False, indent=2)}
-        rendered = loader.render(self.TEMPLATE, ctx)
-        parts = loader.parse_frontmatter(rendered or '')
-        return parts.get('system', ''), parts.get('user', '')
+        return loader.render_and_parse(TEMPLATE_FILTER_RANK, ctx)
 
     def _extract_items(self, data: dict, n_input: int) -> List[dict]:
         """从 LLM 响应中提取有效 items"""
@@ -64,7 +61,7 @@ class FilterRankModule(BaseModule):
                 continue
 
             sub_topic = row.get('sub_topic', '')
-            if sub_topic not in self.VALID_SUB_TOPICS:
+            if sub_topic not in self.valid_sub_topics:
                 sub_topic = '其他'
 
             try:
@@ -93,7 +90,7 @@ class FilterRankModule(BaseModule):
 
         # 调用 LLM
         system, user = self._build_prompts(items)
-        data = self.llm_client.call_json(system, user, temperature=0.3, max_tokens=8192)
+        data = self.llm_client.call_json(system, user, temperature=self._app_config.llm.default_temperature, max_tokens=self._app_config.llm.filter_rank_max_tokens)
 
         # 提取并合并结果
         llm_items = self._extract_items(data, n_input)
@@ -113,7 +110,7 @@ class FilterRankModule(BaseModule):
         limited_items = []
         for it in filtered_items:
             t = it.get('sub_topic', '其他')
-            if topic_counts.get(t, 0) < 10:
+            if topic_counts.get(t, 0) < self.max_news_per_topic:
                 limited_items.append(it)
                 topic_counts[t] = topic_counts.get(t, 0) + 1
 
@@ -134,7 +131,3 @@ class FilterRankModule(BaseModule):
         self.save_json(output_file, result)
         return {'count': len(limited_items), 'input_count': n_input, 'api_calls': 1}
 
-
-# 向后兼容
-def run_filter_rank(input_file: str, output_file: str, date_str: str) -> dict:
-    return FilterRankModule(date_str).run(input_file, output_file)

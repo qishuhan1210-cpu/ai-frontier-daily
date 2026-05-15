@@ -23,50 +23,33 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
-# 优先使用本地 utils
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from utils import default_day_paths
+from utils.base_config import AppConfig
 
-# 导入四大模块
 from ingest import IngestModule
 from filter_rank import FilterRankModule
 from summarize import SummarizeModule
 from assemble import AssembleModule
 
 
-# 稳定顺序
 ORDER = ('ingest', 'filter_rank', 'summarize', 'assemble')
 
 
-def canonical_step(name: str) -> Optional[str]:
-    """仅接受 ORDER 中的名字（忽略大小写）；否则返回 None"""
-    key = (name or '').strip().lower()
-    if not key:
-        return None
-    return key if key in ORDER else None
-
-
 def parse_steps(steps_arg: str) -> List[str]:
-    """
-    解析步骤参数：'all' 为全量 ORDER；否则逗号分隔，去重保序
-    """
     raw = (steps_arg or '').strip().lower()
     if raw == 'all':
         return list(ORDER)
 
-    seen: set = set()
-    out: List[str] = []
-    for part in (steps_arg or '').split(','):
-        p = part.strip()
-        if not p:
-            continue
-        c = canonical_step(p)
-        if c and c not in seen:
-            seen.add(c)
-            out.append(c)
+    seen = set()
+    out = []
+    for part in raw.split(','):
+        step = part.strip()
+        if step in ORDER and step not in seen:
+            seen.add(step)
+            out.append(step)
     return out
 
 
@@ -82,7 +65,9 @@ def main():
     args = parser.parse_args()
 
     date_str = args.date or datetime.now().strftime('%Y-%m-%d')
-    paths = default_day_paths(date_str)
+
+    config = AppConfig()
+    paths = config.day_paths(date_str)
 
     ingested_path = Path(args.ingested) if args.ingested else paths['ingested']
     filtered_path = Path(args.filtered) if args.filtered else paths['filtered']
@@ -99,10 +84,9 @@ def main():
     print(f'输出目录: {paths["dir"]}')
     print()
 
-    # 执行 ingest
     if 'ingest' in steps:
         print('=== Ingest 阶段: RSS 抓取与去重 ===')
-        ingest_module = IngestModule(date_str)
+        ingest_module = IngestModule(date_str, config)
         result = ingest_module.run(str(ingested_path))
         print(f'抓取: {result["crawl"]["count"]} 条, 状态: {result["crawl"]["status"]}')
         print(f'去重后: {result["dedup"]["count"]} 条')
@@ -110,13 +94,12 @@ def main():
         print(f'最终写入: {result["count"]} 条 → {ingested_path}')
         print()
 
-    # 执行 filter_rank
     if 'filter_rank' in steps:
         print('=== Filter Rank 阶段: 智能筛选与排序 ===')
         if not ingested_path.exists():
             print(f'错误: 输入文件不存在: {ingested_path}')
             return
-        filter_module = FilterRankModule(date_str)
+        filter_module = FilterRankModule(date_str, config)
         result = filter_module.run(str(ingested_path), str(filtered_path))
         print(f'输入: {result["input_count"]} 条')
         print(f'保留: {result["count"]} 条')
@@ -124,10 +107,9 @@ def main():
         print(f'写入: {filtered_path}')
         print()
 
-    # 执行 summarize
     if 'summarize' in steps:
         print('=== Summarize 阶段: LLM 摘要 ===')
-        summarize_module = SummarizeModule(date_str)
+        summarize_module = SummarizeModule(date_str, config)
         result = summarize_module.run(str(filtered_path), str(summary_path))
         print(f'处理: {result["count"]} 条')
         print(f'API 调用: {result["api_calls"]} 次')
@@ -135,13 +117,12 @@ def main():
         print(f'写入: {summary_path}')
         print()
 
-    # 执行 assemble
     if 'assemble' in steps:
         print('=== Assemble 阶段: 拼版渲染 ===')
         if not summary_path.exists():
             print(f'错误: 输入文件不存在: {summary_path}')
             return
-        assemble_module = AssembleModule(date_str)
+        assemble_module = AssembleModule(date_str, config)
         result = assemble_module.run(str(summary_path), str(output_path))
         print(f'渲染: {result["count"]} 条新闻')
         print(f'输出: {result["path"]}')

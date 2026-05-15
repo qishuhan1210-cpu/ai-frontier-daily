@@ -30,9 +30,6 @@ output/
 .env
 config/secrets.json
 
-# 项目本地临时文件
-TODO&CHANGELOG.md
-
 # 临时与备份
 *.tmp
 *.bak
@@ -51,3 +48,6 @@ TODO&CHANGELOG.md
 skills
 skills-lock.json
 .idea/
+
+
+todolist/

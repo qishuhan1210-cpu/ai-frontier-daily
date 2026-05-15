@@ -6,8 +6,10 @@ ingest.py — RSS 抓取、去重模块、关键词粗筛
 
 from __future__ import annotations
 
+import html
 import json
 import os
+import re
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -15,16 +17,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from utils import (
-    FN_SUMMARY,
-    load_assembly_config,
-    load_dedup_config,
-    load_modules_window_hours,
-    load_public_feeds_config,
-    load_sources_config,
-    output_dir_for_date,
-)
-from utils.base import BaseModule
+from utils import AppConfig, WorkModule, FN_SUMMARY
 
 try:
     import requests
@@ -32,15 +25,59 @@ except ImportError:
     requests = None
 
 
-class IngestModule(BaseModule):
+class IngestModule(WorkModule):
     """RSS 抓取与去重"""
 
-    DEFAULT_FORBIDDEN = ['/index', '/list', '/channel', '/topic', '/home', '/user', 'page=']
-    OUTLINE_FINGERPRINT_MAX_CHARS = 1600
-
-    def __init__(self, date_str: str):
+    def __init__(self, date_str: str, config: AppConfig):
         super().__init__(date_str, 'ingest')
-        self.settings, self.feeds = load_public_feeds_config()
+        self.feeds_config = config.feeds
+        self.dedup_config = config.dedup
+        self._app_config = config
+
+    @staticmethod
+    def strip_html(raw: Optional[str], limit: int = 4000) -> str:
+        if not raw:
+            return ''
+        text = re.sub(r'<[^>]+>', ' ', raw)
+        text = html.unescape(text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text[:limit]
+
+    @staticmethod
+    def is_placeholder(text: str, patterns: tuple = ('点击查看原文', 'click to read', 'read more')) -> bool:
+        if not text:
+            return True
+        t = text.strip()
+        if len(t) < 6:
+            return True
+        low = t.lower()
+        for p in patterns:
+            if p in t or p.lower() in low:
+                return True
+        return False
+
+    @staticmethod
+    def similarity_tokens(text: str, word_n: int = 3, char_n: int = 3) -> set:
+        text = (text or '').lower().strip()
+        if not text:
+            return set()
+        tokens = []
+        words = text.split()
+        if word_n >= 1 and len(words) >= word_n:
+            for i in range(len(words) - word_n + 1):
+                tokens.append(' '.join(words[i:i + word_n]))
+        if char_n >= 1 and len(text) >= char_n:
+            for i in range(len(text) - char_n + 1):
+                tokens.append(text[i:i + char_n])
+        return set(tokens)
+
+    @staticmethod
+    def jaccard_similarity(set_a: set, set_b: set) -> float:
+        if not set_a or not set_b:
+            return 0.0
+        intersection = len(set_a & set_b)
+        union = len(set_a | set_b)
+        return intersection / union if union > 0 else 0.0
 
     def _local_tag(self, tag: str) -> str:
         return tag.split('}')[-1] if tag and '}' in tag else (tag or '')
@@ -143,19 +180,20 @@ class IngestModule(BaseModule):
 
     def fetch(self) -> Tuple[List[dict], dict]:
         """拉取 RSS 源"""
-        timeout = float(self.settings.get('timeout_seconds', 20))
-        retries = int(self.settings.get('max_retries', 3))
-        backoff = float(self.settings.get('retry_backoff_seconds', 1.5))
-        per_feed = int(self.settings.get('max_items_per_feed', 50))
-        total_cap = int(self.settings.get('max_items_total', 800))
-        window = load_modules_window_hours()
+        cfg = self.feeds_config
+        timeout = float(cfg.timeout_seconds)
+        retries = int(cfg.max_retries)
+        backoff = float(cfg.retry_backoff_seconds)
+        per_feed = int(cfg.max_items_per_feed)
+        total_cap = int(cfg.max_items_total)
+        window = self._app_config.feeds.time_window_hours
 
-        ua = self.settings.get('user_agent', 'AIFrontierDaily/1.0')
+        ua = cfg.user_agent
         headers = {'User-Agent': ua, 'Accept': 'application/rss+xml, application/xml, text/xml, */*'}
 
         all_items, seen, errors = [], set(), 0
 
-        for feed in self.feeds:
+        for feed in cfg.feeds:
             url = feed.get('url', '').strip()
             source = feed.get('source', urlparse(url).netloc or 'unknown')
             if not url:
@@ -167,12 +205,15 @@ class IngestModule(BaseModule):
                 continue
 
             items = self._parse_rss(body, source)
+            blacklist = list(cfg.url_blacklist_patterns) if hasattr(cfg, 'url_blacklist_patterns') else []
             kept = 0
             for it in items:
                 if kept >= per_feed:
                     break
                 u = it['url']
                 if u in seen or not self._in_window(it, window):
+                    continue
+                if blacklist and any(pat in u for pat in blacklist):
                     continue
                 seen.add(u)
                 it['_feed_url'] = url
@@ -195,17 +236,17 @@ class IngestModule(BaseModule):
         meta = {
             'count': len(all_items),
             'status': 'ok' if all_items else 'empty',
-            'feeds_ok': len(self.feeds) - errors,
+            'feeds_ok': len(self.feeds_config.feeds) - errors,
             'feeds_failed': errors,
         }
         return all_items, meta
 
     def dedup(self, items: List[dict]) -> Tuple[List[dict], dict]:
         """去重（URL + 标题相似度）"""
-        cfg = load_dedup_config()
-        threshold = float(cfg['title_similarity_threshold'])
-        word_n = int(cfg['word_ngram_n'])
-        char_n = int(cfg['char_ngram_n'])
+        cfg = self.dedup_config
+        threshold = float(cfg.title_similarity_threshold)
+        word_n = int(cfg.word_ngram_n)
+        char_n = int(cfg.char_ngram_n)
 
         seen_urls, url_to_tokens, passed = set(), {}, []
 
@@ -235,17 +276,17 @@ class IngestModule(BaseModule):
         - 近几日频繁出现的新闻视为重复（剔除）
         - 但连续/累计出现 4+ 天的新闻视为持续热点，保留
         """
-        cfg = load_dedup_config()
-        if not cfg.get('recent_summary_enabled', True):
+        cfg = self.dedup_config
+        if not cfg.recent_summary_enabled:
             return items, {'enabled': False, 'dropped': 0}
 
-        n_days = max(0, int(cfg.get('recent_summary_days', 7)))
-        word_n = int(cfg['word_ngram_n'])
-        char_n = int(cfg['char_ngram_n'])
-        title_thresh = float(cfg['recent_summary_title_threshold'])
-        body_thresh = float(cfg['recent_summary_text_threshold'])
+        n_days = max(0, int(cfg.recent_summary_days))
+        word_n = int(cfg.word_ngram_n)
+        char_n = int(cfg.char_ngram_n)
+        title_thresh = float(cfg.recent_summary_title_threshold)
+        body_thresh = float(cfg.recent_summary_text_threshold)
         # 持续热点阈值：出现天数 >= 4 则保留
-        persistent_days_threshold = int(cfg.get('persistent_days_threshold', 4))
+        persistent_days_threshold = int(self.dedup_config.persistent_days_threshold)
 
         # 加载历史指纹：每条指纹关联其出现的日期索引
         base = datetime.strptime(self.date_str, '%Y-%m-%d')
@@ -253,7 +294,7 @@ class IngestModule(BaseModule):
 
         for i in range(1, n_days + 1):
             d = (base - timedelta(days=i)).strftime('%Y-%m-%d')
-            path = output_dir_for_date(d) / FN_SUMMARY
+            path = self._app_config.output_dir(d) / FN_SUMMARY
             if not path.exists():
                 continue
             try:
@@ -265,7 +306,7 @@ class IngestModule(BaseModule):
                     outline = ' '.join(x for x in [
                         it.get('title'), it.get('summary'), it.get('one_liner'),
                         it.get('plain_explain'), it.get('digest_for_outline')
-                    ] if x)[:self.OUTLINE_FINGERPRINT_MAX_CHARS]
+                    ] if x)[:self.dedup_config.outline_fingerprint_max_chars]
                     day_fps.append({
                         'url_norm': self._norm_url(it.get('url')),
                         'title_tok': self.similarity_tokens(title, word_n, char_n),
@@ -283,7 +324,7 @@ class IngestModule(BaseModule):
         for it in items:
             url = self._norm_url(it.get('url'))
             title = (it.get('title') or '').strip()
-            outline = f"{title} {it.get('summary', '')}".strip()[:self.OUTLINE_FINGERPRINT_MAX_CHARS]
+            outline = f"{title} {it.get('summary', '')}".strip()[:self.dedup_config.outline_fingerprint_max_chars]
             title_tok = self.similarity_tokens(title, word_n, char_n)
             body_tok = self.similarity_tokens(outline, word_n, char_n)
 
@@ -345,7 +386,3 @@ class IngestModule(BaseModule):
             'recent_summary_dedup': recent_meta,
         }
 
-
-# 向后兼容
-def run_ingest(date_str: str, output_file: str) -> dict:
-    return IngestModule(date_str).run(output_file)
