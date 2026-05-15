@@ -68,7 +68,7 @@ class AssembleModule(WorkModule):
         # header
         header = {
             'date_str': self.date_str,
-            'coverage_line': self._app_config.header_coverage,
+            'coverage_line': self._app_config.template.coverage,
             'sources_str': blocks.get('header', {}).get('data_sources', '多家媒体'),
             'header_tag': blocks.get('header', {}).get('tags_full', '#AI早报'),
             'header_status': '已归档',

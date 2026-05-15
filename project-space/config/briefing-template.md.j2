@@ -34,7 +34,7 @@
 {% endif %}
 {% endfor %}
 {% if unknown is defined and unknown.entries and unknown.entries|length > 0 %}
-## 六、其他 · 未分类
+## {{ sections|length + 1 }}、其他 · 未分类
 {% for it in unknown.entries %}
 {{ news_item(it) }}
 {% endfor %}

@@ -1,5 +1,5 @@
 # AI Frontier Daily 配置文件
-# 版本：2.2
+# 版本：2.3
 # 更新日期：2026-05-15
 
 public_feeds:
@@ -55,3 +55,22 @@ assembly:
   summary_max_chars: 500
   summary_unified_max_items: 120
   footer_max_lines_per_module: 3
+
+classification:
+  main_sections:
+    - {id: "foundation", name: "AI 基石与算力", description: "AI基础设施与算力支撑", examples: "GPU、数据中心、储能、芯片"}
+    - {id: "core_tech", name: "大模型与核心技术", description: "基础模型与核心AI技术", examples: "GPT、Claude、Llama、预训练、对齐"}
+    - {id: "agent", name: "AI 智能体与交互", description: "AI智能体与具身智能", examples: "Agent、机器人、AI助手、具身智能"}
+    - {id: "vertical", name: "AI+ 垂直应用", description: "AI在各行业的垂直落地应用", examples: "医疗AI、教育AI、金融AI、AIGC"}
+    - {id: "industry", name: "AI 产业与观察", description: "AI产业动态与治理伦理", examples: "融资、并购、政策、出口管制"}
+
+tags:
+  tag_options:
+    - {name: "融资投资", description: "资本动向"}
+    - {name: "产品发布", description: "新产品/服务上市"}
+    - {name: "技术突破", description: "核心技术进展"}
+    - {name: "政策监管", description: "政策法规影响"}
+    - {name: "企业动态", description: "公司战略与组织"}
+    - {name: "市场格局", description: "行业竞争态势"}
+  vertical_tags_whitelist: [AI医疗, 辅助诊断, 存储技术, 边缘计算, 智能座舱]
+  general_tags_whitelist: [投融资, 财报, 战略合作, 新品发布, 技术突破]

@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from utils.base_config import AppConfig
 
 
 class TemplateRenderer:
@@ -64,3 +67,30 @@ class PromptLoader(TemplateRenderer):
         rendered = self.render(path, context)
         parts = self.parse_frontmatter(rendered or '')
         return parts.get('system', ''), parts.get('user', '')
+
+    def load_with_config(
+        self,
+        template_path: Path,
+        config: AppConfig,
+        **kwargs: Any,
+    ) -> tuple[str, str]:
+        """从 AppConfig.template 提取公共变量后渲染并解析提示词模板
+
+        Args:
+            template_path: 提示词模板路径（.md.j2）
+            config: AppConfig 实例
+            **kwargs: 额外运行时变量（可覆盖公共变量，如 date_str / news_json）
+
+        Returns:
+            (system_prompt, user_prompt) 元组
+        """
+        t = config.template
+        template_vars: dict[str, Any] = {
+            'coverage': t.coverage,
+            'ids_str': t.ids_str,
+            'module_names': t.module_names,
+            'tag_options': t.tag_options,
+            'classification_rules': t.classification_rules,
+            **kwargs,
+        }
+        return self.render_and_parse(template_path, template_vars)
