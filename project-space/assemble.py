@@ -11,6 +11,8 @@ from typing import Sequence
 from utils import AppConfig, TEMPLATE_BRIEFING, TemplateRenderer, WorkModule
 from utils.domain import BriefingMeta, SummaryItem
 
+_CN_NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+
 
 class AssembleModule(WorkModule):
     """拼版渲染"""
@@ -24,11 +26,7 @@ class AssembleModule(WorkModule):
 
     def _load_items(self, input_file: str) -> BriefingMeta:
         """加载 items 和 blocks"""
-        data = self.load_json(input_file)
-        if data is not None:
-            return BriefingMeta.from_dict(data)
-        raw_items = self.load_jsonl(input_file)
-        return BriefingMeta(items=[SummaryItem.from_dict(it) for it in raw_items])
+        return BriefingMeta.from_dict(self.load_json(input_file))
 
     def _news_row(self, number: str, it: SummaryItem, cap: int) -> dict:
         """生成新闻行数据"""
@@ -78,6 +76,7 @@ class AssembleModule(WorkModule):
 
         sections = []
         for i, m in enumerate(self.modules, 1):
+            cn = _CN_NUM[i - 1] if i <= len(_CN_NUM) else str(i)
             mod_items = groups.get(m.id, [])[:self.assembly_cfg.max_news_per_module]
             summary_items = []
             for it in mod_items:
@@ -89,7 +88,7 @@ class AssembleModule(WorkModule):
                 else:
                     print(f"[过滤] [{m.name}] 标题: {it.title[:50]}... 原因: plain_explain={has_plain}, impact_1={has_impact1}, impact_2={has_impact2}")
             entries = [self._news_row(f"{i}.{j+1}", it, cap) for j, it in enumerate(summary_items)]
-            sections.append({'heading': f"## {m.name}\n", 'empty': not summary_items, 'entries': entries})
+            sections.append({'heading': f"## {cn}、{m.name}\n", 'empty': not summary_items, 'entries': entries})
 
         footer_rows = []
         for m in self.modules:
@@ -111,12 +110,10 @@ class AssembleModule(WorkModule):
             self.save_json(output_file, {'items': [], 'blocks': {}})
             return {'path': output_file, 'count': 0}
 
-        # 渲染
         ctx = self._build_context(meta)
         renderer = TemplateRenderer()
         md = renderer.render(TEMPLATE_BRIEFING, ctx)
 
-        # 写入
         os.makedirs(os.path.dirname(output_file) or '.', exist_ok=True)
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(md)

@@ -258,10 +258,12 @@ class BriefingMeta:
 
     @staticmethod
     def from_dict(d: dict) -> 'BriefingMeta':
-        items = [SummaryItem.from_dict(it) for it in d.get('items', [])]
+        items, blocks = d.get('items', []), d.get('blocks', {})
+        header = blocks.get('header', {})
+        items = [SummaryItem.from_dict(it) for it in items]
         return BriefingMeta(
             items=items,
-            tags_full=d.get('tags_full', '#AI早报'),
-            data_sources=d.get('data_sources', '多家媒体'),
-            footer=d.get('footer', {}),
+            tags_full=header.get('tags_full', '#AI早报'),
+            data_sources=header.get('data_sources', '多家媒体'),
+            footer=blocks.get('footer', {})
         )
