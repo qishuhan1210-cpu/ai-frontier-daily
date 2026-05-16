@@ -88,6 +88,10 @@ class SummarizeModule(WorkModule):
 
         # 调用 LLM
         system, user = self._build_prompts(items)
+        print("system:", system)
+        
+        print("user:", user)
+        
         data = self.llm_client.call_json(system, user, temperature=self._app_config.llm.default_temperature, max_tokens=self._app_config.llm.summarize_max_tokens)
 
         # 提取结果

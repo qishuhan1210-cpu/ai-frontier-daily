@@ -49,8 +49,7 @@ class ConfigDict:
 class TemplateConfig:
     """模板变量配置 — 聚合分类、标签及 coverage 文案的生成逻辑"""
 
-    def __init__(self, assembly_modules: list, classification_data: dict, tags_data: dict):
-        self._modules = assembly_modules
+    def __init__(self, classification_data: dict, tags_data: dict):
         self._init_classification(classification_data or {})
         self._init_tags(tags_data or {})
 
@@ -65,32 +64,12 @@ class TemplateConfig:
         self.general_tags_whitelist: list = data.get('general_tags_whitelist', [])
 
     @property
-    def coverage(self) -> str:
-        return ' · '.join(m.name for m in self._modules)
+    def tag_options(self) -> list:
+        return self._tag_options
 
     @property
-    def ids_str(self) -> str:
-        return ', '.join(m.id for m in self._modules)
-
-    @property
-    def module_names(self) -> list:
-        return [m.name for m in self._modules]
-
-    @property
-    def tag_options(self) -> str:
-        return '、'.join(getattr(t, 'name', '') for t in self._tag_options)
-
-    @property
-    def classification_rules(self) -> str:
-        if not self._classification_sections:
-            return ''
-        rows = ['| 主题 | 定义说明 | 典型内容 |', '|------|----------|----------|']
-        for s in self._classification_sections:
-            name = getattr(s, 'name', '')
-            desc = getattr(s, 'description', '')
-            examples = getattr(s, 'examples', '')
-            rows.append(f'| **{name}** | {desc} | {examples} |')
-        return '\n'.join(rows)
+    def classification_rules(self) -> list:
+        return self._classification_sections
 
 
 # === 应用主配置 ===
@@ -110,7 +89,6 @@ class AppConfig:
         self.filter_rank = ConfigDict(raw.get('filter_rank', {}))
         self.assembly = ConfigDict(raw.get('assembly', {}))
         self.template = TemplateConfig(
-            assembly_modules=self.assembly.modules,
             classification_data=raw.get('classification', {}),
             tags_data=raw.get('tags', {}),
         )

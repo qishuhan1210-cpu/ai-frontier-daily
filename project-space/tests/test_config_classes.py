@@ -58,9 +58,10 @@ class TestAppConfig:
 
     def test_template_coverage(self):
         config = AppConfig()
-        coverage = config.template.coverage
-        assert "大模型" in coverage, "template.coverage 应包含大模型"
-        assert " · " in coverage, "template.coverage 应用 · 分隔"
+        rules = config.template.classification_rules
+        coverage = ' · '.join(getattr(m, 'name', '') for m in rules)
+        assert "大模型" in coverage, "template.classification_rules 应包含大模型"
+        assert " · " in coverage, "coverage 应用 · 分隔"
 
 
 class TestConfigDict:

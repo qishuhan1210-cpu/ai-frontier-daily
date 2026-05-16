@@ -1,5 +1,32 @@
 ## 变更日志
 
+### 2026-05-16 (commit: -)，作者：wghlmg1210
+
+#### 研发工程
+
+- **base_config** - 重构 TemplateConfig，移除 assembly_modules 耦合
+  - 构造函数取消 assembly_modules 参数，改为纯依赖 classification_data
+  - classification_rules 改为返回分类对象列表（而非表格字符串）
+  - tag_options 改为返回列表（而非逗号分隔字符串）
+- **prompt_loader** - 新支持 frontmatter `$$$$|` 分隔符格式
+  - parse_frontmatter 重构支持新格式解析
+  - load_with_config 改为动态从 classification_rules 生成 coverage/ids_str/module_names/tag_options
+- **assemble** - modules 来源改为 config.template.classification_rules；coverage_line 生成逻辑内联化
+- **filter_rank** - valid_sub_topics 改为 list 类型，来源迁移至 config.template.classification_rules
+- **push_feishu_bot** - footer_modules 取完整 module name（取消前两字符截断）
+
+#### 提示词工程
+
+- **filter_ranker.md.j2** - frontmatter 改用 `$$$$|` 新格式；sub_topic 枚举和分类规则表格改为循环渲染
+- **summarizer.md.j2** - frontmatter 改用 `$$$$|` 新格式
+
+#### 研发工程（测试）
+
+- **test_prompt_injection** - frontmatter 格式统一更新为 `$$$$|`；mock_config 简化，移除 modules 列表
+- **test_config_classes** - 断言改为验证 classification_rules 返回列表
+
+---
+
 ### 2026-05-15 (commit: -)，作者：wghlmg1210
 
 #### 研发工程

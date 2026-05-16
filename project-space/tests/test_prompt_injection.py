@@ -13,18 +13,14 @@ from utils.prompt_loader import PromptLoader
 
 
 def _make_mock_config() -> SimpleNamespace:
-    modules = [
-        ConfigDict({'id': 'model', 'name': '大模型'}),
-        ConfigDict({'id': 'hardware', 'name': 'AI硬件'}),
-        ConfigDict({'id': 'application', 'name': '行业应用'}),
-        ConfigDict({'id': 'investment', 'name': '投融资'}),
-        ConfigDict({'id': 'policy', 'name': '政策监管'}),
-    ]
     template = TemplateConfig(
-        assembly_modules=modules,
         classification_data={
             'main_sections': [
-                {'id': 'core_tech', 'name': '大模型与核心技术', 'description': '基础模型', 'examples': 'GPT'},
+                {'id': 'model', 'name': '大模型', 'description': '基础模型技术', 'examples': 'GPT'},
+                {'id': 'hardware', 'name': 'AI硬件', 'description': 'AI芯片与算力', 'examples': 'GPU'},
+                {'id': 'application', 'name': '行业应用', 'description': 'AI落地应用', 'examples': '医疗AI'},
+                {'id': 'investment', 'name': '投融资', 'description': '资本市场', 'examples': '融资'},
+                {'id': 'policy', 'name': '政策监管', 'description': '政策法规', 'examples': 'AI治理'},
             ]
         },
         tags_data={
@@ -43,42 +39,16 @@ def _make_mock_config() -> SimpleNamespace:
 
 class TestTemplateConfig:
 
-    def test_coverage_matches_module_names(self):
-        config = _make_mock_config()
-        for name in ['大模型', 'AI硬件', '行业应用', '投融资', '政策监管']:
-            assert name in config.template.coverage, f"coverage 中缺少模块名: {name}"
-
-    def test_ids_str_matches_modules(self):
-        config = _make_mock_config()
-        for mid in ['model', 'hardware', 'application', 'investment', 'policy']:
-            assert mid in config.template.ids_str, f"ids_str 中缺少模块 ID: {mid}"
-
-    def test_module_names_list(self):
-        config = _make_mock_config()
-        assert config.template.module_names == ['大模型', 'AI硬件', '行业应用', '投融资', '政策监管']
-
-    def test_tag_options_str_contains_all_tags(self):
-        config = _make_mock_config()
-        for tag in ['融资投资', '产品发布', '技术突破', '政策监管', '企业动态', '市场格局']:
-            assert tag in config.template.tag_options, f"tag_options 中缺少: {tag}"
-
-    def test_tag_options_default_separator(self):
-        t = TemplateConfig([], {}, {'tag_options': [{'name': 'A'}, {'name': 'B'}]})
-        assert t.tag_options == 'A、B'
-
-    def test_tag_options_empty(self):
-        t = TemplateConfig([], {}, {})
-        assert t.tag_options == ''
-
-    def test_classification_rules_returns_table(self):
+    def test_classification_rules_returns_list(self):
         config = _make_mock_config()
         rules = config.template.classification_rules
-        assert '大模型与核心技术' in rules
-        assert '|' in rules
+        assert isinstance(rules, list)
+        assert len(rules) == 5
+        assert rules[0].name == '大模型'
 
     def test_classification_rules_empty(self):
-        t = TemplateConfig([], {}, {})
-        assert t.classification_rules == ''
+        t = TemplateConfig({}, {})
+        assert t.classification_rules == []
 
 
 class TestPromptLoaderLoadWithConfig:
@@ -86,17 +56,17 @@ class TestPromptLoaderLoadWithConfig:
     def test_renders_coverage(self, tmp_path):
         template = tmp_path / 'filter_ranker.md.j2'
         template.write_text(
-            '---\nsystem: |\n  sys\nuser: |\n  coverage={{ coverage }}\n\n---\n',
+            'system: $$$$|\n  sys\nsystem: |$$$$\n\nuser: $$$$|\n  coverage={{ coverage }}\nuser: |$$$$\n',
             encoding='utf-8'
         )
         config = _make_mock_config()
         _, user = PromptLoader().load_with_config(template, config, date_str='2026-05-15', news_json='[]')
-        assert config.template.coverage in user
+        assert '大模型' in user
 
     def test_renders_ids_str(self, tmp_path):
         template = tmp_path / 'summarizer.md.j2'
         template.write_text(
-            '---\nsystem: |\n  sys\nuser: |\n  ids={{ ids_str }}\n\n---\n',
+            'system: $$$$|\n  sys\nsystem: |$$$$\n\nuser: $$$$|\n  ids={{ ids_str }}\nuser: |$$$$\n',
             encoding='utf-8'
         )
         config = _make_mock_config()
@@ -107,7 +77,7 @@ class TestPromptLoaderLoadWithConfig:
     def test_kwargs_override_base_vars(self, tmp_path):
         template = tmp_path / 'test.md.j2'
         template.write_text(
-            '---\nsystem: |\n  sys\nuser: |\n  cov={{ coverage }}\n\n---\n',
+            'system: $$$$|\n  sys\nsystem: |$$$$\n\nuser: $$$$|\n  cov={{ coverage }}\nuser: |$$$$\n',
             encoding='utf-8'
         )
         config = _make_mock_config()
@@ -117,7 +87,7 @@ class TestPromptLoaderLoadWithConfig:
     def test_tag_options_injected(self, tmp_path):
         template = tmp_path / 'test.md.j2'
         template.write_text(
-            '---\nsystem: |\n  sys\nuser: |\n  tags={{ tag_options }}\n\n---\n',
+            'system: $$$$|\n  sys\nsystem: |$$$$\n\nuser: $$$$|\n  tags={{ tag_options }}\nuser: |$$$$\n',
             encoding='utf-8'
         )
         config = _make_mock_config()

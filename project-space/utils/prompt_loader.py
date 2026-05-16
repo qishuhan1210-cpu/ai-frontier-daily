@@ -48,17 +48,19 @@ class PromptLoader(TemplateRenderer):
 
     @staticmethod
     def parse_frontmatter(content: str) -> dict[str, str]:
-        """解析 frontmatter 格式"""
-        parts = {}
-        match = re.search(r'^---\s*\n(.*?)\n---\s*$', content, re.DOTALL | re.MULTILINE)
-        if not match:
-            return parts
+        """解析 frontmatter 格式
 
-        front = match.group(1)
-        for block in re.finditer(r'^(\w+):\s*\|?\s*\n((?:  .*\n|\n)+)', front, re.MULTILINE):
-            key, value = block.groups()
-            lines = [line[2:] if line.startswith('  ') else line for line in value.rstrip().split('\n')]
-            parts[key] = '\n'.join(lines).strip()
+        新规范格式：
+            xxxx: $$$$|
+              内容
+            xxxx: |$$$$
+        """
+        parts = {}
+        for match in re.finditer(r'^(\w+):\s+\$\$\$\$\|(.*?)\n(\w+):\s+\|\$\$\$\$$', content, re.DOTALL | re.MULTILINE):
+            key, value, end_key = match.groups()
+            if key == end_key:
+                lines = [line[2:] if line.startswith('  ') else line.lstrip() for line in value.split('\n')]
+                parts[key] = '\n'.join(lines).strip()
 
         return parts
 
@@ -85,12 +87,14 @@ class PromptLoader(TemplateRenderer):
             (system_prompt, user_prompt) 元组
         """
         t = config.template
+        rules = t.classification_rules
+        tag_opts = t.tag_options
         template_vars: dict[str, Any] = {
-            'coverage': t.coverage,
-            'ids_str': t.ids_str,
-            'module_names': t.module_names,
-            'tag_options': t.tag_options,
-            'classification_rules': t.classification_rules,
+            'coverage': ' · '.join(getattr(m, 'name', '') for m in rules),
+            'ids_str': ', '.join(getattr(m, 'id', '') for m in rules),
+            'module_names': [getattr(m, 'name', '') for m in rules],
+            'tag_options': '、'.join(getattr(t, 'name', '') for t in tag_opts),
+            'classification_rules': rules,
             **kwargs,
         }
         return self.render_and_parse(template_path, template_vars)
