@@ -37,13 +37,12 @@ def test_app_config() -> bool:
         assert config.dedup.word_ngram_n > 0, "n-gram长度无效"
         print("[Self Test] ✓ Dedup配置测试通过")
 
-        assert len(config.assembly.modules) > 0, "模块列表为空"
         assert config.assembly.max_news_per_module > 0, "最大新闻数无效"
         print("[Self Test] ✓ Assembly配置测试通过")
 
-        modules = [m for m in config.assembly.modules if m.id == 'model']
+        modules = [m for m in config.template.classification_rules if m.id == 'core_tech']
         assert len(modules) > 0, "模块查询失败"
-        assert modules[0].name == "大模型", "模块名称不正确"
+        assert modules[0].name == "大模型与核心技术", "模块名称不正确"
         print("[Self Test] ✓ 模块查询测试通过")
 
         assert config.llm.default_temperature > 0, "LLM温度无效"

@@ -38,7 +38,6 @@ class TestAppConfig:
 
     def test_assembly_config(self):
         config = AppConfig()
-        assert len(config.assembly.modules) > 0, "模块列表为空"
         assert config.assembly.max_news_per_module > 0, "最大新闻数无效"
 
     def test_filter_rank_config(self):
@@ -51,10 +50,10 @@ class TestAppConfig:
 
     def test_module_query(self):
         config = AppConfig()
-        modules = [m for m in config.assembly.modules if m.id == 'model']
+        modules = [m for m in config.template.classification_rules if m.id == 'core_tech']
         assert len(modules) > 0, "模块查询失败"
         module = modules[0]
-        assert module.name == "大模型", "模块名称不正确"
+        assert module.name == "大模型与核心技术", "模块名称不正确"
 
     def test_template_coverage(self):
         config = AppConfig()

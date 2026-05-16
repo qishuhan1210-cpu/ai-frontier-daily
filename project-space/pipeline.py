@@ -84,38 +84,38 @@ def main():
     print(f'输出目录: {paths["dir"]}')
     print()
 
-    # if 'ingest' in steps:
-    #     print('=== Ingest 阶段: RSS 抓取与去重 ===')
-    #     ingest_module = IngestModule(date_str, config)
-    #     result = ingest_module.run(str(ingested_path))
-    #     print(f'抓取: {result["crawl"]["count"]} 条, 状态: {result["crawl"]["status"]}')
-    #     print(f'去重后: {result["dedup"]["count"]} 条')
-    #     print(f'近几日去重: 剔除 {result["recent_summary_dedup"].get("dropped", 0)} 条')
-    #     print(f'最终写入: {result["count"]} 条 → {ingested_path}')
-    #     print()
+    if 'ingest' in steps:
+        print('=== Ingest 阶段: RSS 抓取与去重 ===')
+        ingest_module = IngestModule(date_str, config)
+        result = ingest_module.run(str(ingested_path))
+        print(f'抓取: {result["crawl"]["count"]} 条, 状态: {result["crawl"]["status"]}')
+        print(f'去重后: {result["dedup"]["count"]} 条')
+        print(f'近几日去重: 剔除 {result["recent_summary_dedup"].get("dropped", 0)} 条')
+        print(f'最终写入: {result["count"]} 条 → {ingested_path}')
+        print()
 
-    # if 'filter_rank' in steps:
-    #     print('=== Filter Rank 阶段: 智能筛选与排序 ===')
-    #     if not ingested_path.exists():
-    #         print(f'错误: 输入文件不存在: {ingested_path}')
-    #         return
-    #     filter_module = FilterRankModule(date_str, config)
-    #     result = filter_module.run(str(ingested_path), str(filtered_path))
-    #     print(f'输入: {result["input_count"]} 条')
-    #     print(f'保留: {result["count"]} 条')
-    #     print(f'API 调用: {result["api_calls"]} 次')
-    #     print(f'写入: {filtered_path}')
-    #     print()
+    if 'filter_rank' in steps:
+        print('=== Filter Rank 阶段: 智能筛选与排序 ===')
+        if not ingested_path.exists():
+            print(f'错误: 输入文件不存在: {ingested_path}')
+            return
+        filter_module = FilterRankModule(date_str, config)
+        result = filter_module.run(str(ingested_path), str(filtered_path))
+        print(f'输入: {result["input_count"]} 条')
+        print(f'保留: {result["count"]} 条')
+        print(f'API 调用: {result["api_calls"]} 次')
+        print(f'写入: {filtered_path}')
+        print()
 
-    # if 'summarize' in steps:
-    #     print('=== Summarize 阶段: LLM 摘要 ===')
-    #     summarize_module = SummarizeModule(date_str, config)
-    #     result = summarize_module.run(str(filtered_path), str(summary_path))
-    #     print(f'处理: {result["count"]} 条')
-    #     print(f'API 调用: {result["api_calls"]} 次')
-    #     print(f'统一模式: {result["unified"]}')
-    #     print(f'写入: {summary_path}')
-    #     print()
+    if 'summarize' in steps:
+        print('=== Summarize 阶段: LLM 摘要 ===')
+        summarize_module = SummarizeModule(date_str, config)
+        result = summarize_module.run(str(filtered_path), str(summary_path))
+        print(f'处理: {result["count"]} 条')
+        print(f'API 调用: {result["api_calls"]} 次')
+        print(f'统一模式: {result["unified"]}')
+        print(f'写入: {summary_path}')
+        print()
 
     if 'assemble' in steps:
         print('=== Assemble 阶段: 拼版渲染 ===')
