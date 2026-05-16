@@ -18,8 +18,7 @@ from typing import Any, Dict, List, Optional
 class WorkModule(ABC):
     """流水线工作流模块基类"""
 
-    def __init__(self, date_str: str, name: str):
-        self.date_str = date_str
+    def __init__(self, name: str):
         self.name = name
         self._config_loaded = False
 

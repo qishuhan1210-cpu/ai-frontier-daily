@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from utils.base_config import AppConfig
+    from utils.base_config import ProtocolLayerConfig
 
 
 class TemplateRenderer:
@@ -73,27 +73,28 @@ class PromptLoader(TemplateRenderer):
     def load_with_config(
         self,
         template_path: Path,
-        config: AppConfig,
+        config: ProtocolLayerConfig,
         **kwargs: Any,
     ) -> tuple[str, str]:
-        """从 AppConfig.template 提取公共变量后渲染并解析提示词模板
+        """从 ProtocolLayerConfig 提取公共变量后渲染并解析提示词模板
 
         Args:
             template_path: 提示词模板路径（.md.j2）
-            config: AppConfig 实例
+            config: ProtocolLayerConfig 实例
             **kwargs: 额外运行时变量（可覆盖公共变量，如 date_str / news_json）
 
         Returns:
             (system_prompt, user_prompt) 元组
         """
-        t = config.template
-        rules = t.classification_rules
-        tag_opts = t.tag_options
+        rules = config.classification.main_sections
+        vertical_tags = config.vertical_tags_whitelist
+        general_tags = config.general_tags_whitelist
         template_vars: dict[str, Any] = {
             'coverage': ' · '.join(getattr(m, 'name', '') for m in rules),
             'ids_str': ', '.join(getattr(m, 'id', '') for m in rules),
             'module_names': [getattr(m, 'name', '') for m in rules],
-            'tag_options': '、'.join(getattr(t, 'name', '') for t in tag_opts),
+            'vertical_tags': '、'.join(vertical_tags),
+            'general_tags': '、'.join(general_tags),
             'classification_rules': rules,
             **kwargs,
         }

@@ -8,16 +8,16 @@ from __future__ import annotations
 
 import html
 import json
-import os
 import re
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 
 from utils import AppConfig, WorkModule, FN_SUMMARY
+from utils.domain import NewsItem
 
 try:
     import requests
@@ -28,10 +28,10 @@ except ImportError:
 class IngestModule(WorkModule):
     """RSS 抓取与去重"""
 
-    def __init__(self, date_str: str, config: AppConfig):
-        super().__init__(date_str, 'ingest')
-        self.feeds_config = config.feeds
-        self.dedup_config = config.dedup
+    def __init__(self, config: AppConfig):
+        super().__init__('ingest')
+        self.feeds_config = config.modules.public_feeds
+        self.dedup_config = config.modules.dedup
         self._app_config = config
 
     @staticmethod
@@ -186,7 +186,7 @@ class IngestModule(WorkModule):
         backoff = float(cfg.retry_backoff_seconds)
         per_feed = int(cfg.max_items_per_feed)
         total_cap = int(cfg.max_items_total)
-        window = self._app_config.feeds.time_window_hours
+        window = self.feeds_config.time_window_hours
 
         ua = cfg.user_agent
         headers = {'User-Agent': ua, 'Accept': 'application/rss+xml, application/xml, text/xml, */*'}
@@ -241,7 +241,7 @@ class IngestModule(WorkModule):
         }
         return all_items, meta
 
-    def dedup(self, items: List[dict]) -> Tuple[List[dict], dict]:
+    def dedup(self, items: List[NewsItem]) -> Tuple[List[NewsItem], dict]:
         """去重（URL + 标题相似度）"""
         cfg = self.dedup_config
         threshold = float(cfg.title_similarity_threshold)
@@ -251,25 +251,24 @@ class IngestModule(WorkModule):
         seen_urls, url_to_tokens, passed = set(), {}, []
 
         for it in items:
-            url = it.get('url', '')
-            title = it.get('title', '')
+            url = it.url or ''
 
             if url in seen_urls:
                 continue
             seen_urls.add(url)
 
-            tokens = self.similarity_tokens(title, word_n, char_n)
+            tokens = self.similarity_tokens(it.title or '', word_n, char_n)
             is_dup = any(self.jaccard_similarity(tokens, t) > threshold for t in url_to_tokens.values())
             if is_dup:
                 continue
 
-            if title:
+            if it.title:
                 url_to_tokens[url] = tokens
             passed.append(it)
 
         return passed, {'count': len(passed)}
 
-    def dedup_recent(self, items: List[dict]) -> Tuple[List[dict], dict]:
+    def dedup_recent(self, items: List[NewsItem]) -> Tuple[List[NewsItem], dict]:
         """与近几日 summary 去重
 
         规则：
@@ -285,16 +284,14 @@ class IngestModule(WorkModule):
         char_n = int(cfg.char_ngram_n)
         title_thresh = float(cfg.recent_summary_title_threshold)
         body_thresh = float(cfg.recent_summary_text_threshold)
-        # 持续热点阈值：出现天数 >= 4 则保留
         persistent_days_threshold = int(self.dedup_config.persistent_days_threshold)
 
-        # 加载历史指纹：每条指纹关联其出现的日期索引
-        base = datetime.strptime(self.date_str, '%Y-%m-%d')
-        fingerprints_by_day = {}  # day_index -> [fingerprints]
+        base = datetime.strptime(self._app_config.date_str, '%Y-%m-%d')
+        fingerprints_by_day = {}
 
         for i in range(1, n_days + 1):
             d = (base - timedelta(days=i)).strftime('%Y-%m-%d')
-            path = self._app_config.output_dir(d) / FN_SUMMARY
+            path = self._app_config.paths.output_dir() / FN_SUMMARY
             if not path.exists():
                 continue
             try:
@@ -319,39 +316,33 @@ class IngestModule(WorkModule):
         if not fingerprints_by_day:
             return items, {'enabled': True, 'dropped': 0}
 
-        # 去重：统计匹配到的历史指纹来自多少天
         kept, dropped = [], 0
         for it in items:
-            url = self._norm_url(it.get('url'))
-            title = (it.get('title') or '').strip()
-            outline = f"{title} {it.get('summary', '')}".strip()[:self.dedup_config.outline_fingerprint_max_chars]
+            url = self._norm_url(it.url)
+            title = (it.title or '').strip()
+            outline = f"{title} {it.summary or ''}".strip()[:self.dedup_config.outline_fingerprint_max_chars]
             title_tok = self.similarity_tokens(title, word_n, char_n)
             body_tok = self.similarity_tokens(outline, word_n, char_n)
 
-            # 收集匹配到的日期索引
             matched_days = set()
             for day_idx, day_fps in fingerprints_by_day.items():
                 for fp in day_fps:
-                    # URL 完全匹配
                     if url and fp['url_norm'] and url == fp['url_norm']:
                         matched_days.add(day_idx)
                         break
-                    # 标题相似度匹配
                     if title_tok and fp['title_tok'] and self.jaccard_similarity(title_tok, fp['title_tok']) >= title_thresh:
                         matched_days.add(day_idx)
                         break
-                    # 正文相似度匹配
                     if len(outline) >= 48 and body_tok and fp['body_tok'] and self.jaccard_similarity(body_tok, fp['body_tok']) >= body_thresh:
                         matched_days.add(day_idx)
                         break
 
-            # 判断：出现天数 >= 阈值则为持续热点，保留；否则剔除
             if len(matched_days) >= persistent_days_threshold:
-                kept.append(it)  # 持续热点，保留
+                kept.append(it)
             elif len(matched_days) > 0:
-                dropped += 1  # 有重复但不够持久，剔除
+                dropped += 1
             else:
-                kept.append(it)  # 无重复，保留
+                kept.append(it)
 
         return kept, {'enabled': True, 'dropped': dropped}
 
@@ -374,10 +365,12 @@ class IngestModule(WorkModule):
         """执行完整流程"""
         raw_items, crawl_meta = self.fetch()
 
+        raw_items = [NewsItem.from_dict(it) for it in raw_items]
+
         deduped, dedup_meta = self.dedup(raw_items)
         final, recent_meta = self.dedup_recent(deduped)
 
-        self.save_jsonl(output_file, final)
+        self.save_jsonl(output_file, [it.__dict__ for it in final])
 
         return {
             'count': len(final),

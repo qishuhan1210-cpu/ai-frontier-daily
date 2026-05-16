@@ -4,6 +4,52 @@
 
 #### 研发工程
 
+- **utils/domain** - 新增数据模型层，建立继承体系
+  - NewsItem（基类）→ FilteredItem → SummaryItem 三级继承
+  - 每个类提供 `from_dict()` 静态方法
+  - FilteredItem 新增 `from_news_and_llm()` 工厂方法
+  - SummaryItem 新增 `from_filtered_and_llm()` 和 `extract_articles()` 方法
+  - 新增 FilterStats、BriefingMeta 辅助模型
+- **ingest** - 全程使用 NewsItem 对象处理
+  - `dedup()` / `dedup_recent()` 参数改为 `List[NewsItem]`
+  - 字段访问从字典改为属性（`it.get('url')` → `it.url`）
+- **filter_rank** - 迁移到 domain 模型
+  - 使用 `NewsItem.from_dict()` 加载数据
+  - 使用 `FilteredItem.from_news_and_llm()` 合并 LLM 结果
+  - 使用 `FilterStats.from_counts()` 生成统计信息
+  - 废弃 `sub_topic`，改用 `main_section` + `sub_section`
+- **summarize** - 迁移到 domain 模型
+  - 使用 `FilteredItem.from_dict()` 加载数据
+  - 使用 `SummaryItem.from_filtered_and_llm()` 合并结果
+  - `_merge_items()` 独立为专用方法
+- **assemble** - 使用 BriefingMeta 数据结构
+  - `_load_items()` 返回 `BriefingMeta` 对象
+  - `_build_context()` 接收 `BriefingMeta` 参数
+- **config** - 重构为三层架构
+  - 模块层：public_feeds、dedup、filter_rank、assembly
+  - 链接层：llm 客户端配置
+  - 协议层：protocol（字段协议）、classification（分类体系）、tags（标签词库）
+- **base_config** - AppConfig 重构，支持三层配置访问
+  - `config.modules`：模块层配置
+  - `config.links`：链接层配置
+  - `config.protocols`：协议层配置
+- **pipeline** - 更新模块初始化方式，移除 date_str 参数
+
+#### 提示词工程
+
+- **filter_ranker.md.j2** - 字段协议更新
+  - `sub_topic` → `main_section` + `sub_section`
+  - 更新分类体系为 "4+1" 层级架构
+- **summarizer.md.j2** - 标签字段更新
+  - 新增 `vertical_tags`、`general_tags` 字段
+- **briefing-template.md.j2** - 渲染垂类/通用标签
+
+---
+
+### 2026-05-16 (commit: -)，作者：wghlmg1210
+
+#### 研发工程
+
 - **base_config** - 重构 TemplateConfig，移除 assembly_modules 耦合
   - 构造函数取消 assembly_modules 参数，改为纯依赖 classification_data
   - classification_rules 改为返回分类对象列表（而非表格字符串）

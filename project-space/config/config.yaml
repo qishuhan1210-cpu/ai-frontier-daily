@@ -1,18 +1,17 @@
-# AI Frontier Daily 配置文件
-# 版本：2.3
-# 更新日期：2026-05-15
-
+# ----------------------------------------------- 模块层 ----------------------------------------------- #
+# ==================== 数据源配置 ====================
+# 配置 RSS/Feed 数据源的获取参数和源列表
 public_feeds:
   settings:
-    timeout_seconds: 20
-    max_retries: 3
-    max_items_per_feed: 100
-    max_items_total: 1000
+    timeout_seconds: 20              # 请求超时时间（秒）
+    max_retries: 3                    # 最大重试次数
+    max_items_per_feed: 100           # 每个源最多获取条数
+    max_items_total: 1000             # 全局最大获取条数
     user_agent: "Mozilla/5.0 (compatible; AIFrontierDaily/1.0; +https://github.com/YOUR_GITHUB_OR_USER/ai-frontier-daily)"
-    retry_backoff_seconds: 1.5
-    url_blacklist_patterns: ["/index", "/list", "/channel", "/topic", "/home", "/user", "page="]
-    time_window_hours: 48
-  feeds:
+    retry_backoff_seconds: 1.5        # 重试间隔（秒）
+    url_blacklist_patterns: ["/index", "/list", "/channel", "/topic", "/home", "/user", "page="]  # 黑名单URL模式
+    time_window_hours: 48             # 时间窗口（小时），只获取最近N小时内的新闻
+  feeds:                              # 数据源列表
     - {source: "36氪", url: "https://36kr.com/feed", verify_tls: true}
     - {source: "雷锋网", url: "https://www.leiphone.com/feed", verify_tls: true}
     - {source: "极客公园", url: "https://www.geekpark.net/rss", verify_tls: true}
@@ -22,55 +21,103 @@ public_feeds:
     - {source: "开源中国", url: "https://www.oschina.net/news/rss", verify_tls: true}
     - {source: "机器之心", url: "https://www.jiqizhixin.com/rss", verify_tls: false}
 
+# ==================== 去重配置 ====================
+# 配置新闻去重策略和相似度阈值
 dedup:
-  title_similarity_threshold: 0.88
-  word_ngram_n: 3
-  char_ngram_n: 3
-  recent_summary_enabled: true
-  recent_summary_days: 3
+  title_similarity_threshold: 0.88    # 标题相似度阈值（0-1）
+  word_ngram_n: 3                    # 词级N-gram大小
+  char_ngram_n: 3                    # 字符级N-gram大小
+  recent_summary_enabled: true        # 是否启用近期摘要去重
+  recent_summary_days: 3             # 近期摘要去重天数
   recent_summary_title_threshold: 0.90
   recent_summary_text_threshold: 0.45
   outline_fingerprint_max_chars: 1600
-  persistent_days_threshold: 4
+  persistent_days_threshold: 4       # 持久化去重天数阈值
 
-llm:
-  default_temperature: 0.3
-  default_max_tokens: 2000
-  filter_rank_max_tokens: 8192
-  summarize_max_tokens: 20480
-  summarize_item_cap: 1800
-  summarize_keys: [headline, plain_explain, impact_1, impact_2, digest_for_outline, tag, hot]
-
+# ==================== 筛选排序模块配置 ====================
+# 配置新闻筛选和优先级排序的规则
 filter_rank:
-  max_news_per_topic: 10
+  max_news_per_topic: 10             # 每个主题最多保留条数
 
+# ==================== 组装渲染模块配置 ====================
+# 配置简报组装和模板渲染的参数（模块列表从 classification.main_sections 读取）
 assembly:
-  modules:
-    - {id: "foundation", name: "AI 基石与算力"}
-    - {id: "core_tech", name: "大模型与核心技术"}
-    - {id: "agent", name: "AI 智能体与交互"}
-    - {id: "vertical", name: "AI+ 垂直应用"}
-    - {id: "industry", name: "AI 产业 产业与观察"}
-  max_news_per_module: 8
-  summary_max_chars: 500
-  summary_unified_max_items: 120
-  footer_max_lines_per_module: 3
+  max_news_per_module: 8             # 每个模块最多新闻条数
+  summary_max_chars: 500             # 摘要最大字符数
+  summary_unified_max_items: 120     # 统一摘要模式最大条目数
+  footer_max_lines_per_module: 3     # 页脚每个模块最多行数
 
+# ----------------------------------------------- 链接层 ----------------------------------------------- #
+
+# ==================== LLM 客户端配置 ====================
+# 配置大语言模型的调用参数
+llm:
+  default_temperature: 0.3            # 默认温度参数（0-1，越低越确定性）
+  default_max_tokens: 40960           # 默认最大生成token数
+  filter_rank_max_tokens: 8192       # 筛选排序阶段最大token数
+  summarize_max_tokens: 20480        # 摘要生成阶段最大token数
+  summarize_item_cap: 1800           # 单条新闻摘要字符上限
+
+# ----------------------------------------------- 协议层 ----------------------------------------------- #
+
+# ==================== 协议层配置 ====================
+# 定义各模块间数据交换的字段协议
+protocol:
+  # 摘要生成阶段输出字段协议（供 summarize.py 和 prompt 模板使用）
+  summarize:
+    fields:
+      - {name: "headline", type: "string", desc: "标题（融合价值点+事件概括，40-50字）"}
+      - {name: "plain_explain", type: "string", desc: "白话解释（面向普通用户，≤120字符）"}
+      - {name: "impact_1", type: "string", desc: "影响/后果一（~30字）"}
+      - {name: "impact_2", type: "string", desc: "影响/后果二（~30字）"}
+      - {name: "digest_for_outline", type: "string", desc: "概要（供正文使用，≤500字）"}
+      - {name: "main_section", type: "string", desc: "主板块（5大板块之一）"}
+      - {name: "sub_section", type: "string", desc: "子栏目"}
+      - {name: "vertical_tags", type: "string[]", desc: "垂类标签（1-2个）"}
+      - {name: "general_tags", type: "string[]", desc: "通用标签（1-2个）"}
+      - {name: "hot", type: "string", desc: "热度标识（🔥/🔥🔥/🔥🔥🔥）"}
+
+# ==================== 分类与标签配置 ====================
+# 配置内容分类体系和标签词库
 classification:
+  # 主板块定义（"4+1"层级架构）
   main_sections:
     - {id: "foundation", name: "AI 基石与算力", description: "AI基础设施与算力支撑", examples: "GPU、数据中心、储能、芯片"}
     - {id: "core_tech", name: "大模型与核心技术", description: "基础模型与核心AI技术", examples: "GPT、Claude、Llama、预训练、对齐"}
     - {id: "agent", name: "AI 智能体与交互", description: "AI智能体与具身智能", examples: "Agent、机器人、AI助手、具身智能"}
     - {id: "vertical", name: "AI+ 垂直应用", description: "AI在各行业的垂直落地应用", examples: "医疗AI、教育AI、金融AI、AIGC"}
     - {id: "industry", name: "AI 产业与观察", description: "AI产业动态与治理伦理", examples: "融资、并购、政策、出口管制"}
-
-tags:
-  tag_options:
-    - {name: "融资投资", description: "资本动向"}
-    - {name: "产品发布", description: "新产品/服务上市"}
-    - {name: "技术突破", description: "核心技术进展"}
-    - {name: "政策监管", description: "政策法规影响"}
-    - {name: "企业动态", description: "公司战略与组织"}
-    - {name: "市场格局", description: "行业竞争态势"}
-  vertical_tags_whitelist: [AI医疗, 辅助诊断, 存储技术, 边缘计算, 智能座舱]
-  general_tags_whitelist: [投融资, 财报, 战略合作, 新品发布, 技术突破]
+  
+  # 标签体系定义
+  tags:
+    # 垂类标签白名单（15个）- 赛道/概念级标签
+    # 约束：严禁具体公司名、产品型号、过于学术的算法名称
+    vertical_tags_whitelist:
+      - AI医疗
+      - 辅助诊断
+      - 存储技术
+      - 边缘计算
+      - 智能座舱
+      - 智能制造
+      - 数字人
+      - AIGC
+      - 智能体
+      - 自动驾驶
+      - 金融科技
+      - 教育科技
+      - 电商AI
+      - 营销AI
+      - 安全AI
+    
+    # 通用标签白名单（10个）- 事件类型标签
+    general_tags_whitelist:
+      - 投融资
+      - 财报
+      - 战略合作
+      - 新品发布
+      - 技术突破
+      - 行业监管
+      - 应用落地
+      - 提效降本
+      - 行业趋势
+      - AI伦理

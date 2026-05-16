@@ -2,7 +2,8 @@
 {% macro news_item(it) -%}
 ### {{ it.number }}. {{ it.headline }} {% if it.hot %}{{ it.hot }}{% endif %}
 
-**标签：** {{ it.tag }}
+**垂类标签：** {% if it.vertical_tags %}{% for tag in it.vertical_tags %}#{{ tag }}{% if not loop.last %} {% endif %}{% endfor %}{% else %}无{% endif %}
+**通用标签：** {% if it.general_tags %}{% for tag in it.general_tags %}#{{ tag }}{% if not loop.last %} {% endif %}{% endfor %}{% else %}无{% endif %}
 
 **原文链接：** [{{ it.link_label }}]({{ it.url }})
 

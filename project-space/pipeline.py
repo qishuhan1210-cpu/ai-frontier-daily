@@ -66,8 +66,8 @@ def main():
 
     date_str = args.date or datetime.now().strftime('%Y-%m-%d')
 
-    config = AppConfig()
-    paths = config.day_paths(date_str)
+    config = AppConfig(date_str)
+    paths = config.paths.day_paths()
 
     ingested_path = Path(args.ingested) if args.ingested else paths['ingested']
     filtered_path = Path(args.filtered) if args.filtered else paths['filtered']
@@ -86,11 +86,11 @@ def main():
 
     if 'ingest' in steps:
         print('=== Ingest 阶段: RSS 抓取与去重 ===')
-        ingest_module = IngestModule(date_str, config)
+        ingest_module = IngestModule(config)
         result = ingest_module.run(str(ingested_path))
         print(f'抓取: {result["crawl"]["count"]} 条, 状态: {result["crawl"]["status"]}')
         print(f'去重后: {result["dedup"]["count"]} 条')
-        print(f'近几日去重: 剔除 {result["recent_summary_dedup"].get("dropped", 0)} 条')
+        print(f'近几日去重: 剔除 {result.get("recent_summary_dedup", {}).get("dropped", 0)} 条')
         print(f'最终写入: {result["count"]} 条 → {ingested_path}')
         print()
 
@@ -99,7 +99,7 @@ def main():
         if not ingested_path.exists():
             print(f'错误: 输入文件不存在: {ingested_path}')
             return
-        filter_module = FilterRankModule(date_str, config)
+        filter_module = FilterRankModule(config)
         result = filter_module.run(str(ingested_path), str(filtered_path))
         print(f'输入: {result["input_count"]} 条')
         print(f'保留: {result["count"]} 条')
@@ -109,7 +109,7 @@ def main():
 
     if 'summarize' in steps:
         print('=== Summarize 阶段: LLM 摘要 ===')
-        summarize_module = SummarizeModule(date_str, config)
+        summarize_module = SummarizeModule(config)
         result = summarize_module.run(str(filtered_path), str(summary_path))
         print(f'处理: {result["count"]} 条')
         print(f'API 调用: {result["api_calls"]} 次')
@@ -122,7 +122,7 @@ def main():
         if not summary_path.exists():
             print(f'错误: 输入文件不存在: {summary_path}')
             return
-        assemble_module = AssembleModule(date_str, config)
+        assemble_module = AssembleModule(config)
         result = assemble_module.run(str(summary_path), str(output_path))
         print(f'渲染: {result["count"]} 条新闻')
         print(f'输出: {result["path"]}')

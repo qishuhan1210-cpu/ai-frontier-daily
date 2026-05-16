@@ -55,6 +55,7 @@ class PushConfig:
     date: str
     doc_url: str
     summary_path: Path
+    protocols: Any
     webhook: str | None
     chat_id: str | None
     use_lark_cli: bool
@@ -77,9 +78,8 @@ class FeishuBotPusher:
 
     def __init__(self, config: PushConfig):
         self.cfg = config
-        app_config = AppConfig()
-        self.footer_modules = {m.id: m.name for m in app_config.template.classification_rules}
-        self.topic_to_module = {m.name: m.id for m in app_config.template.classification_rules}
+        self.footer_modules = {m.id: m.name for m in config.protocols.classification.main_sections}
+        self.section_name_to_id = {m.name: m.id for m in config.protocols.classification.main_sections}
 
     # -------------------------------------------------------------------------
     # 公共接口
@@ -180,8 +180,8 @@ class FeishuBotPusher:
         module_hot_counts = {key: [] for key in self.footer_modules.keys()}
 
         for item in items:
-            sub_topic = item.get('sub_topic', '')
-            module_id = self.topic_to_module.get(sub_topic, 'unknown')
+            main_section = item.get('main_section', '')
+            module_id = self.section_name_to_id.get(main_section)
             if module_id in module_hot_counts:
                 hot = item.get('hot', '')
                 if hot:
@@ -264,40 +264,44 @@ class ConfigFactory:
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> PushConfig:
         """从命令行参数创建配置"""
-        webhook = cls._load_webhook_from_secrets() if not args.use_lark_cli else None
-        chat_id = args.chat_id or cls._load_chat_id_from_secrets() if args.use_lark_cli else None
-        summary_path = cls._resolve_summary_path(args.date, args.summary_json)
+        date = args.date
+        app_config = AppConfig(date_str=date)
+
+        webhook = cls._load_webhook_from_secrets(app_config) if not args.use_lark_cli else None
+        chat_id = args.chat_id or cls._load_chat_id_from_secrets(app_config) if args.use_lark_cli else None
+        summary_path = cls._resolve_summary_path(app_config, args.summary_json)
 
         return PushConfig(
-            date=args.date,
+            date=date,
             doc_url=args.doc_url,
             summary_path=summary_path,
+            protocols=app_config.protocols,
             webhook=webhook,
             chat_id=chat_id,
             use_lark_cli=args.use_lark_cli,
         )
 
     @staticmethod
-    def _load_webhook_from_secrets() -> str:
+    def _load_webhook_from_secrets(app_config: AppConfig) -> str:
         """从 secrets.json 加载 webhook"""
-        feishu_cfg = AppConfig()._feishu_config
+        feishu_cfg = app_config._feishu_config
         webhook = feishu_cfg.get('bot_webhook', '').strip()
         if not webhook:
             raise ValueError('config/secrets.json 缺少 feishu.bot_webhook 配置')
         return webhook
 
     @staticmethod
-    def _load_chat_id_from_secrets() -> str | None:
+    def _load_chat_id_from_secrets(app_config: AppConfig) -> str | None:
         """从 secrets.json 加载 chat_id"""
-        return AppConfig()._feishu_config.get('chat_id', '').strip()
+        return app_config._feishu_config.get('chat_id', '').strip()
 
     @staticmethod
-    def _resolve_summary_path(date: str, custom_path: str | None) -> Path:
+    def _resolve_summary_path(app_config: AppConfig, custom_path: str | None) -> Path:
         """解析 summary.json 路径"""
         if custom_path:
             path = Path(custom_path)
         else:
-            path = AppConfig().day_paths(date)['summary']
+            path = app_config.paths.day_paths()['summary']
 
         if not path.exists():
             raise FileNotFoundError(f'找不到 {path}')

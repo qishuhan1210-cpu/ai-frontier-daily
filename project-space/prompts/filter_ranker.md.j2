@@ -13,12 +13,13 @@ system: $$$$|
     #### `items[]` 字段
     - **只返回通过筛选的新闻**，相关性/热度双低的新闻直接剔除，不在 `items` 中出现
     - 返回的新闻按综合得分（relevance × hot_level）降序排列
-    - **子主题数量控制**：每个 `sub_topic` 最多 **10 条**，超出截断
+    - **主板块数量控制**：每个 `main_section` 最多 **10 条**，超出截断
 
     | 字段 | 类型 | 必填 | 说明 |
     |------|------|------|------|
     | `source_index` | number | 是 | 对应输入清单的原始 index |
-    | `sub_topic` | string | 是 | 分子主题，必须从以下选项中选择：{% for s in classification_rules %}{% if s.name %}{{ s.name }}{% if not loop.last %}、{% endif %}{% endif %}{% endfor %} |
+    | `main_section` | string | 是 | 主板块名称，从以下5类中选1个：AI 基石与算力、大模型与核心技术、AI 智能体与交互、AI+ 垂直应用、AI 产业与观察 |
+    | `sub_section` | string | 是 | 子栏目名称，对应主板块的子分类 |
     | `relevance` | number | 是 | 相关性评分 0-1（与 AI/前沿科技相关程度，小数点后两位），**必须 ≥ 0.8** |
     | `hot_level` | number | 是 | 热度评分 0-1（潜在关注度、行业影响力，小数点后两位），**必须 ≥ 0.8** |
     | `rank` | number | 是 | 综合排名序号（从 1 开始，按 relevance × hot_level 降序）|
@@ -29,7 +30,17 @@ system: $$$$|
   | `input_count` | number | 是 | 输入总数 |
   | `output_count` | number | 是 | 通过筛选保留数量（等于 items.length）|
   | `dropped_count` | number | 是 | 剔除数量（双低新闻）|
-  | `top_topics` | string[] | 是 | 主要分子主题分布（按数量降序，取前 3-5 个）|
+  | `top_topics` | string[] | 是 | 主要主板块分布（按数量降序，取前 3-5 个）|
+
+  ### 分类体系定义（"4+1"层级架构）
+
+  | 主板块 | 子栏目 | 说明 |
+  |--------|--------|------|
+  | **AI 基石与算力** | 芯片与半导体、算力设施与通信、能源与散热、数据要素 | 物理底座层 |
+  | **大模型与核心技术** | 通用大模型、多模态与生成式AI、核心算法与框架、端侧AI与轻量化 | 技术中枢层 |
+  | **AI 智能体与交互** | AI智能体（Agent）、具身智能、自动驾驶与出行 | 连接层 |
+  | **AI+ 垂直应用** | 办公/企服、消费电子、文娱/教育、医疗/科研、工业/金融 | 场景落地层 |
+  | **AI 产业与观察** | 商业动态、前沿探索、治理与伦理 | 宏观视角层 |
 
   ### 结构示例
 
@@ -38,14 +49,16 @@ system: $$$$|
     "items": [
       {
         "source_index": 5,
-        "sub_topic": "大模型",
+        "main_section": "大模型与核心技术",
+        "sub_section": "通用大模型",
         "relevance": 0.95,
         "hot_level": 0.88,
         "rank": 1
       },
       {
         "source_index": 12,
-        "sub_topic": "AI硬件",
+        "main_section": "AI 基石与算力",
+        "sub_section": "芯片与半导体",
         "relevance": 0.82,
         "hot_level": 0.75,
         "rank": 2
@@ -55,7 +68,7 @@ system: $$$$|
       "input_count": 50,
       "output_count": 15,
       "dropped_count": 35,
-      "top_topics": ["大模型", "AI硬件", "行业应用"]
+      "top_topics": ["大模型与核心技术", "AI 基石与算力", "AI+ 垂直应用"]
     }
   }
   ```
@@ -63,14 +76,16 @@ system: $$$$|
   ### 硬性自检（输出前逐项执行）
 
   1. `items` 只包含通过筛选的新闻，**relevance 和 hot_level 必须同时 ≥ 0.8**，不满足直接剔除
-  2. **子主题数量控制**：每个 `sub_topic` 最多保留 **10 条**，超出部分按综合得分截断
+  2. **主板块数量控制**：每个 `main_section` 最多保留 **10 条**，超出部分按综合得分截断
   3. `items` 按 `rank` 升序排列（1, 2, 3...）
-  4. 每条 item 包含全部 5 个必需字段且值非空
+  4. 每条 item 包含全部 6 个必需字段且值非空
   5. `relevance` 和 `hot_level` 在 [0,1] 范围内，保留两位小数，**必须同时 ≥ 0.8**
-  6. `stats` 包含全部 4 个必需字段
-  7. `stats.output_count` 等于 `items.length`
-  8. `stats.dropped_count` 等于 `input_count - output_count`
-  9. 仅输出合法 JSON，无 Markdown 代码围栏，无前后说明文字
+  6. `main_section` 必须从5个主板块中选择
+  7. `sub_section` 必须对应主板块的子栏目
+  8. `stats` 包含全部 4 个必需字段
+  9. `stats.output_count` 等于 `items.length`
+  10. `stats.dropped_count` 等于 `input_count - output_count`
+  11. 仅输出合法 JSON，无 Markdown 代码围栏，无前后说明文字
 
 system: |$$$$
 
@@ -82,13 +97,15 @@ user: $$$$|
   ## 覆盖范围
   {{ coverage }}
 
-  ## 分子主题定义（必须与 config 模块一致）
+  ## 分类体系定义（"4+1"层级架构）
 
-  | 主题 | 定义说明 | 典型内容 |
-  |------|----------|----------|
-  {% for s in classification_rules %}
-  | **{% if s.name %}{{ s.name }}{% else %}{{ s }}{% endif %}** | {% if s.description %}{{ s.description }}{% endif %} | {% if s.examples %}{{ s.examples }}{% endif %} |
-  {% endfor %}
+  | 主板块 | 子栏目 | 说明 |
+  |--------|--------|------|
+  | **AI 基石与算力** | 芯片与半导体、算力设施与通信、能源与散热、数据要素 | 物理底座层 |
+  | **大模型与核心技术** | 通用大模型、多模态与生成式AI、核心算法与框架、端侧AI与轻量化 | 技术中枢层 |
+  | **AI 智能体与交互** | AI智能体（Agent）、具身智能、自动驾驶与出行 | 连接层 |
+  | **AI+ 垂直应用** | 办公/企服、消费电子、文娱/教育、医疗/科研、工业/金融 | 场景落地层 |
+  | **AI 产业与观察** | 商业动态、前沿探索、治理与伦理 | 宏观视角层 |
 
   ## 筛选标准
 
@@ -102,8 +119,8 @@ user: $$$$|
   3. **纯金融基金**（基金净值、排名、一般理财）
   4. **纯汽车非智驾**（传统汽车新闻，无 AI/自动驾驶关联）
 
-  **子主题数量控制**：
-  - 每个 `sub_topic` 最多保留 **10 条**
+  **主板块数量控制**：
+  - 每个 `main_section` 最多保留 **10 条**
   - 超出部分按综合得分（relevance × hot_level）截断
   - 优先保留高分新闻，确保主题多样性
 
