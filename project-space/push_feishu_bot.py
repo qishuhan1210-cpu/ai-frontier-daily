@@ -78,8 +78,8 @@ class FeishuBotPusher:
     def __init__(self, config: PushConfig):
         self.cfg = config
         app_config = AppConfig()
-        self.footer_modules = {m.id: m.name for m in app_config.assembly.modules}
-        self.topic_to_module = {m.name: m.id for m in app_config.assembly.modules}
+        self.footer_modules = {m.id: m.name for m in app_config.template.classification_rules}
+        self.topic_to_module = {m.name: m.id for m in app_config.template.classification_rules}
 
     # -------------------------------------------------------------------------
     # 公共接口

@@ -46,11 +46,11 @@ filter_rank:
 
 assembly:
   modules:
-    - {id: "model", name: "大模型"}
-    - {id: "hardware", name: "AI硬件"}
-    - {id: "application", name: "行业应用"}
-    - {id: "investment", name: "投融资"}
-    - {id: "policy", name: "政策监管"}
+    - {id: "foundation", name: "AI 基石与算力"}
+    - {id: "core_tech", name: "大模型与核心技术"}
+    - {id: "agent", name: "AI 智能体与交互"}
+    - {id: "vertical", name: "AI+ 垂直应用"}
+    - {id: "industry", name: "AI 产业 产业与观察"}
   max_news_per_module: 8
   summary_max_chars: 500
   summary_unified_max_items: 120
