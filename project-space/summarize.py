@@ -84,12 +84,23 @@ class SummarizeModule(WorkModule):
         data = self.llm_client.call_json(system, user)
 
         by_source, drop = SummaryItem.extract_articles(data)
-
+        
+        # 调试：打印 LLM 响应的原始统计
+        raw_articles = data.get('articles', []) if isinstance(data, dict) else []
+        print(f"[DEBUG] 输入 {len(filtered_items)} 条，LLM 返回 {len(raw_articles)} 条 articles")
+        print(f"[DEBUG] 有效 source_index 匹配 {len(by_source)} 条，drop_indices 包含 {len(drop)} 条")
+        
         out_items = []
+        print(f"[DEBUG] 预计保留: {len(by_source)} 条（LLM 返回且不在 drop_indices 中）")
         for i, filtered_item in enumerate(filtered_items):
             if i in drop:
+                print(f"  [DEBUG] 跳过第 {i} 条 (在 drop_indices 中)")
+                continue
+            if i not in by_source:
+                print(f"  [DEBUG] 跳过第 {i} 条 (LLM 未返回该条数据)")
                 continue
             llm_data = by_source.get(i, {})
+            #print(f"  [DEBUG] 处理第 {i} 条: {filtered_item.title[:40]}...")
             summary_item = self._merge_items(filtered_item, llm_data)
             out_items.append(summary_item)
 
