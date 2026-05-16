@@ -120,6 +120,55 @@ class IngestModule(WorkModule):
                     time.sleep(backoff * (attempt + 1))
         return None
 
+    def _scrape_article_content(self, url: str, timeout: float = 10.0) -> str:
+        """抓取文章页面获取正文内容"""
+        headers = {
+            'User-Agent': self.feeds_config.user_agent,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+        try:
+            resp = requests.get(url, headers=headers, timeout=timeout, verify=False)
+            resp.raise_for_status()
+            content = resp.text
+            
+            # 提取正文的简单策略
+            # 优先查找常见的正文标签
+            text = ''
+            
+            # 方法1：查找 article 标签
+            article_match = re.search(r'<article[^>]*>(.*?)</article>', content, re.DOTALL)
+            if article_match:
+                text = self.strip_html(article_match.group(1), 3000)
+            
+            # 方法2：查找 main 标签
+            if not text:
+                main_match = re.search(r'<main[^>]*>(.*?)</main>', content, re.DOTALL)
+                if main_match:
+                    text = self.strip_html(main_match.group(1), 3000)
+            
+            # 方法3：查找 content 或 post-content 类
+            if not text:
+                content_match = re.search(r'<div[^>]*class=["\'].*?content.*?["\'].*?>(.*?)</div>', content, re.DOTALL | re.IGNORECASE)
+                if content_match:
+                    text = self.strip_html(content_match.group(1), 3000)
+            
+            # 方法4：查找 body 中主要文本
+            if not text:
+                body_match = re.search(r'<body[^>]*>(.*?)</body>', content, re.DOTALL)
+                if body_match:
+                    full_body = self.strip_html(body_match.group(1), 5000)
+                    # 取前3000字符作为正文
+                    text = full_body[:3000]
+            
+            # 清理文本
+            text = re.sub(r'点击查看原文|阅读全文|了解更多', '', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+            
+            return text
+        except Exception as e:
+            print(f"  [WARN] 抓取文章失败 {url}: {str(e)[:50]}")
+            return ''
+
     def _parse_rss(self, xml_bytes: bytes, source: str) -> List[dict]:
         """解析 RSS/Atom XML"""
         items = []
@@ -158,6 +207,15 @@ class IngestModule(WorkModule):
 
             if title and link:
                 pub_dt = self._parse_date(pub_raw)
+                # 如果摘要只是占位符，尝试抓取原文
+                if self.is_placeholder(summary):
+                    print(f"  [INFO] 摘要为占位符，尝试抓取原文: {title[:30]}...")
+                    scraped = self._scrape_article_content(link)
+                    if scraped and len(scraped) > 50:
+                        summary = scraped
+                        print(f"  [INFO] 成功抓取 {len(summary)} 字符")
+                    else:
+                        summary = ''  # 仍然为空
                 item = {'title': title, 'url': link.strip(), 'source': source, 'summary': summary}
                 if pub_dt:
                     item['pub_time'] = pub_dt.isoformat(sep=' ', timespec='seconds')
@@ -378,4 +436,3 @@ class IngestModule(WorkModule):
             'dedup': dedup_meta,
             'recent_summary_dedup': recent_meta,
         }
-
