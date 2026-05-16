@@ -29,9 +29,6 @@ class SummarizeModule(WorkModule):
 
     def _build_prompts(self, items: List[dict]) -> tuple:
         """构建 system/user 提示词"""
-        coverage = self._app_config.header_coverage
-        ids = ', '.join(m.id for m in self._app_config.assembly.modules)
-
         item_cap = int(self._app_config.llm.summarize_item_cap)
         rows = []
         for i, it in enumerate(items):
@@ -43,10 +40,12 @@ class SummarizeModule(WorkModule):
                 'sub_topic': it.get('sub_topic', 'unknown')
             })
 
-        loader = PromptLoader()
-        ctx = {'date_str': self.date_str, 'coverage': coverage, 'ids_str': ids,
-               'news_json': json.dumps(rows, ensure_ascii=False, indent=2)}
-        return loader.render_and_parse(TEMPLATE_SUMMARIZE, ctx)
+        return PromptLoader().load_with_config(
+            TEMPLATE_SUMMARIZE,
+            self._app_config,
+            date_str=self.date_str,
+            news_json=json.dumps(rows, ensure_ascii=False, indent=2),
+        )
 
     def _extract_articles(self, data: dict, n_items: int) -> dict:
         """从 LLM 响应中提取 articles 和 drop_indices"""
@@ -89,6 +88,10 @@ class SummarizeModule(WorkModule):
 
         # 调用 LLM
         system, user = self._build_prompts(items)
+        print("system:", system)
+        
+        print("user:", user)
+        
         data = self.llm_client.call_json(system, user, temperature=self._app_config.llm.default_temperature, max_tokens=self._app_config.llm.summarize_max_tokens)
 
         # 提取结果

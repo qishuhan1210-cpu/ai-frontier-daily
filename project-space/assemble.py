@@ -21,7 +21,7 @@ class AssembleModule(WorkModule):
         super().__init__(date_str, 'assemble')
         self._app_config = config
         self.assembly_cfg = config.assembly
-        self.modules = self.assembly_cfg.modules
+        self.modules = config.template.classification_rules
         self.topic_to_module = {m.name: m.id for m in self.modules}
 
     def _load_items(self, input_file: str) -> tuple:
@@ -66,12 +66,12 @@ class AssembleModule(WorkModule):
         cap = max(200, int(self.assembly_cfg.summary_max_chars))
 
         # header
+        rules = self._app_config.template.classification_rules
         header = {
             'date_str': self.date_str,
-            'coverage_line': self._app_config.header_coverage,
+            'coverage_line': ' · '.join(getattr(m, 'name', '') for m in rules),
             'sources_str': blocks.get('header', {}).get('data_sources', '多家媒体'),
-            'header_tag': blocks.get('header', {}).get('tags_full', '#AI早报'),
-            'header_status': '已归档',
+            'header_tag': blocks.get('header', {}).get('tags_full', '#AI早报')
         }
 
         # sections

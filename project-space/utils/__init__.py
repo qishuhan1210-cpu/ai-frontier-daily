@@ -5,6 +5,7 @@ from utils.work_module import WorkModule
 from utils.llm_client import LLMClient
 from utils.base_config import (
     AppConfig,
+    TemplateConfig,
     CONFIG_YAML,
     ConfigDict,
     FN_BRIEFING,
@@ -37,6 +38,7 @@ __all__ = [
     "TEMPLATE_FILTER_RANK",
     "TEMPLATE_SUMMARIZE",
     "AppConfig",
+    "TemplateConfig",
     "ConfigDict",
     "PromptLoader",
     "TemplateRenderer",

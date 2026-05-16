@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from utils.base_config import AppConfig
 
 
 class TemplateRenderer:
@@ -45,17 +48,19 @@ class PromptLoader(TemplateRenderer):
 
     @staticmethod
     def parse_frontmatter(content: str) -> dict[str, str]:
-        """解析 frontmatter 格式"""
-        parts = {}
-        match = re.search(r'^---\s*\n(.*?)\n---\s*$', content, re.DOTALL | re.MULTILINE)
-        if not match:
-            return parts
+        """解析 frontmatter 格式
 
-        front = match.group(1)
-        for block in re.finditer(r'^(\w+):\s*\|?\s*\n((?:  .*\n|\n)+)', front, re.MULTILINE):
-            key, value = block.groups()
-            lines = [line[2:] if line.startswith('  ') else line for line in value.rstrip().split('\n')]
-            parts[key] = '\n'.join(lines).strip()
+        新规范格式：
+            xxxx: $$$$|
+              内容
+            xxxx: |$$$$
+        """
+        parts = {}
+        for match in re.finditer(r'^(\w+):\s+\$\$\$\$\|(.*?)\n(\w+):\s+\|\$\$\$\$$', content, re.DOTALL | re.MULTILINE):
+            key, value, end_key = match.groups()
+            if key == end_key:
+                lines = [line[2:] if line.startswith('  ') else line.lstrip() for line in value.split('\n')]
+                parts[key] = '\n'.join(lines).strip()
 
         return parts
 
@@ -64,3 +69,32 @@ class PromptLoader(TemplateRenderer):
         rendered = self.render(path, context)
         parts = self.parse_frontmatter(rendered or '')
         return parts.get('system', ''), parts.get('user', '')
+
+    def load_with_config(
+        self,
+        template_path: Path,
+        config: AppConfig,
+        **kwargs: Any,
+    ) -> tuple[str, str]:
+        """从 AppConfig.template 提取公共变量后渲染并解析提示词模板
+
+        Args:
+            template_path: 提示词模板路径（.md.j2）
+            config: AppConfig 实例
+            **kwargs: 额外运行时变量（可覆盖公共变量，如 date_str / news_json）
+
+        Returns:
+            (system_prompt, user_prompt) 元组
+        """
+        t = config.template
+        rules = t.classification_rules
+        tag_opts = t.tag_options
+        template_vars: dict[str, Any] = {
+            'coverage': ' · '.join(getattr(m, 'name', '') for m in rules),
+            'ids_str': ', '.join(getattr(m, 'id', '') for m in rules),
+            'module_names': [getattr(m, 'name', '') for m in rules],
+            'tag_options': '、'.join(getattr(t, 'name', '') for t in tag_opts),
+            'classification_rules': rules,
+            **kwargs,
+        }
+        return self.render_and_parse(template_path, template_vars)

@@ -24,21 +24,27 @@ class FilterRankModule(WorkModule):
         super().__init__(date_str, 'filter_rank')
         self.llm_client = LLMClient(config.llm_client_cfg)
         self._app_config = config
-        self.valid_sub_topics = {m.name for m in config.assembly.modules}
+        self.valid_sub_topics = [getattr(m, 'name', '') for m in config.template.classification_rules]
         self.max_news_per_topic = config.filter_rank.max_news_per_topic
 
     def _build_prompts(self, items: List[dict]) -> tuple:
         """构建 system/user 提示词"""
-        coverage = self._app_config.header_coverage
+        rows = [
+                {
+                    'index': i, 
+                    'title': it.get('title', ''), 
+                    'source': it.get('source', ''),
+                    'url': it.get('url', ''), 
+                    'update_time': it.get('pub_time', '')
+                } for i, it in enumerate(items)
+            ]
 
-        rows = [{'index': i, 'title': it.get('title', ''), 'source': it.get('source', ''),
-                 'url': it.get('url', ''), 'update_time': it.get('pub_time', '')}
-                for i, it in enumerate(items)]
-
-        loader = PromptLoader()
-        ctx = {'date_str': self.date_str, 'coverage': coverage,
-               'news_json': json.dumps(rows, ensure_ascii=False, indent=2)}
-        return loader.render_and_parse(TEMPLATE_FILTER_RANK, ctx)
+        return PromptLoader().load_with_config(
+            TEMPLATE_FILTER_RANK,
+            self._app_config,
+            date_str=self.date_str,
+            news_json=json.dumps(rows, ensure_ascii=False, indent=2),
+        )
 
     def _extract_items(self, data: dict, n_input: int) -> List[dict]:
         """从 LLM 响应中提取有效 items"""

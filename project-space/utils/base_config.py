@@ -45,6 +45,33 @@ class ConfigDict:
         return f"ConfigDict({self.__dict__})"
 
 
+# === 模板配置（整合 classification / tags / coverage 计算） ===
+class TemplateConfig:
+    """模板变量配置 — 聚合分类、标签及 coverage 文案的生成逻辑"""
+
+    def __init__(self, classification_data: dict, tags_data: dict):
+        self._init_classification(classification_data or {})
+        self._init_tags(tags_data or {})
+
+    def _init_classification(self, data: dict) -> None:
+        raw_sections = data.get('main_sections', [])
+        self._classification_sections = [ConfigDict(s) for s in raw_sections]
+
+    def _init_tags(self, data: dict) -> None:
+        raw_options = data.get('tag_options', [])
+        self._tag_options = [ConfigDict(t) for t in raw_options]
+        self.vertical_tags_whitelist: list = data.get('vertical_tags_whitelist', [])
+        self.general_tags_whitelist: list = data.get('general_tags_whitelist', [])
+
+    @property
+    def tag_options(self) -> list:
+        return self._tag_options
+
+    @property
+    def classification_rules(self) -> list:
+        return self._classification_sections
+
+
 # === 应用主配置 ===
 class AppConfig:
     """应用主配置"""
@@ -61,6 +88,10 @@ class AppConfig:
         self.llm = ConfigDict(raw.get('llm', {}))
         self.filter_rank = ConfigDict(raw.get('filter_rank', {}))
         self.assembly = ConfigDict(raw.get('assembly', {}))
+        self.template = TemplateConfig(
+            classification_data=raw.get('classification', {}),
+            tags_data=raw.get('tags', {}),
+        )
 
         self._load_secrets()
 
@@ -91,12 +122,6 @@ class AppConfig:
     def llm_client_cfg(self) -> dict:
         """获取 LLM 客户端配置（合并 secrets 和 config）"""
         return self._llm_client_cfg
-
-    @property
-    def header_coverage(self) -> str:
-        """动态生成 header_coverage"""
-        modules = self.assembly.modules
-        return ' · '.join(m.name for m in modules)
 
     def output_dir(self, date_str: str) -> Path:
         """获取指定日期的输出目录"""

@@ -20,7 +20,6 @@ def test_app_config() -> bool:
         print("[Self Test] ✓ 单例模式测试通过")
 
         config = instance1
-        assert config.TEMPLATES_DIR.exists(), f"模板目录不存在: {config.TEMPLATES_DIR}"
         assert PROMPTS_DIR.exists(), f"提示词目录不存在: {PROMPTS_DIR}"
         print("[Self Test] ✓ 路径常量测试通过")
 
@@ -42,9 +41,9 @@ def test_app_config() -> bool:
         assert config.assembly.max_news_per_module > 0, "最大新闻数无效"
         print("[Self Test] ✓ Assembly配置测试通过")
 
-        module = config.get_module_by_id('model')
-        assert module is not None, "模块查询失败"
-        assert module.name == "一、大模型", "模块名称不正确"
+        modules = [m for m in config.assembly.modules if m.id == 'model']
+        assert len(modules) > 0, "模块查询失败"
+        assert modules[0].name == "大模型", "模块名称不正确"
         print("[Self Test] ✓ 模块查询测试通过")
 
         assert config.llm.default_temperature > 0, "LLM温度无效"

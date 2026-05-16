@@ -1,5 +1,62 @@
 ## 变更日志
 
+### 2026-05-16 (commit: -)，作者：wghlmg1210
+
+#### 研发工程
+
+- **base_config** - 重构 TemplateConfig，移除 assembly_modules 耦合
+  - 构造函数取消 assembly_modules 参数，改为纯依赖 classification_data
+  - classification_rules 改为返回分类对象列表（而非表格字符串）
+  - tag_options 改为返回列表（而非逗号分隔字符串）
+- **prompt_loader** - 新支持 frontmatter `$$$$|` 分隔符格式
+  - parse_frontmatter 重构支持新格式解析
+  - load_with_config 改为动态从 classification_rules 生成 coverage/ids_str/module_names/tag_options
+- **assemble** - modules 来源改为 config.template.classification_rules；coverage_line 生成逻辑内联化
+- **filter_rank** - valid_sub_topics 改为 list 类型，来源迁移至 config.template.classification_rules
+- **push_feishu_bot** - footer_modules 取完整 module name（取消前两字符截断）
+
+#### 提示词工程
+
+- **filter_ranker.md.j2** - frontmatter 改用 `$$$$|` 新格式；sub_topic 枚举和分类规则表格改为循环渲染
+- **summarizer.md.j2** - frontmatter 改用 `$$$$|` 新格式
+
+#### 研发工程（测试）
+
+- **test_prompt_injection** - frontmatter 格式统一更新为 `$$$$|`；mock_config 简化，移除 modules 列表
+- **test_config_classes** - 断言改为验证 classification_rules 返回列表
+
+---
+
+### 2026-05-15 (commit: -)，作者：wghlmg1210
+
+#### 研发工程
+
+- **base_config** - 新增 TemplateConfig，聚合分类/标签/coverage 生成逻辑
+  - TemplateConfig 内联 classification 与 tags 解析，暴露 coverage / ids_str / module_names / tag_options / classification_rules 五个 property
+  - AppConfig 新增 `template` 子属性，管理全部模板变量；删除独立的 `header_coverage` property
+- **prompt_loader** - PromptLoader 新增 `load_with_config()` 方法，从 `config.template` 统一提取变量注入
+- **config** - 版本升至 2.3；新增 `classification`（5 个主分类节点）与 `tags`（6 个 tag 选项 + 两套白名单）预留区块
+- **filter_rank** - `_build_prompts()` 改用 `PromptLoader().load_with_config()`，移除手动变量拼装
+- **summarize** - `_build_prompts()` 改用 `PromptLoader().load_with_config()`，`ids_str` 拼接迁移至注入器
+- **assemble** - `coverage_line` 取值改为 `config.template.coverage`
+- **utils/__init__** - 新增 TemplateConfig 导出
+
+#### 提示词工程
+
+- **summarizer** - 修复 Critical Bug：system prompt tag 体系（旧：企业/用户硬件等6类）与 user prompt（新：融资投资等6类）不一致，统一为新体系
+- **summarizer** - `blocks.footer` 描述及示例中过时模块 ID (`ai_engineering`→`application`、`industry`→`investment`) 修正
+- **summarizer** - system/user 两处 tag 选项改为 `{{ tag_options }}` 动态注入
+- **filter_ranker** - `sub_topic` 枚举及分子主题定义表格改为 `{{ module_names }}` / `{{ classification_rules }}` 动态注入，保留硬编码内容为 else 兜底
+- **briefing-template** - `## 六、其他·未分类` 序号改为 `{{ sections|length + 1 }}` 动态计算
+
+#### 研发工程（测试）
+
+- **test_prompt_injection** - 新增，覆盖 TemplateConfig 所有 property 及 PromptLoader.load_with_config() 渲染行为，共 12 个用例
+- **test_config_classes** - `test_header_coverage` 更新为 `test_template_coverage`，断言改用 `config.template.coverage`
+- **test_config** - 移除对不存在的 `TEMPLATES_DIR` 和 `get_module_by_id()` 的错误引用
+
+---
+
 ### 2026-05-15 (commit: -)，作者：wghlmg1210
 
 #### 研发工程
