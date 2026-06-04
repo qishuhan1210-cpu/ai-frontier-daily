@@ -105,19 +105,21 @@ class LLMClient:
             
             if char == '"':
                 if in_string:
-                    # 检查下一个字符是否也是双引号（LLM可能连续输出两个双引号）
-                    if i + 1 < len(content) and content[i + 1] == '"':
-                        # 在字符串内部，双引号前需要加转义符
-                        result[-1] = '\\"'
-                        result.append('"')
-                        i += 2
-                        continue
-                    in_string = False
+                    # 检查后面第一个非空白字符
+                    remaining = content[i+1:]
+                    j = 0
+                    while j < len(remaining) and remaining[j].isspace():
+                        j += 1
+                    
+                    # 如果后面不是结构字符（},] :），则说明这是字符串内容中的双引号，需要转义
+                    if j < len(remaining) and remaining[j] not in '},]:':
+                        result.append('\\')
+                    else:
+                        # 不需要转义，是字符串结束符
+                        in_string = False
                 else:
+                    # 进入字符串模式
                     in_string = True
-            elif char == '\\' and i + 1 < len(content) and content[i + 1] == '"':
-                # 已经转义的双引号，保持不变
-                pass
             
             result.append(char)
             i += 1

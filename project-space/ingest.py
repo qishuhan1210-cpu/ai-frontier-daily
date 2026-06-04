@@ -394,7 +394,7 @@ class IngestModule(WorkModule):
                 with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 day_fps = []
-                for it in data.get('items', []):
+                for it in data.get('clusters', []):
                     title = (it.get('title') or '').strip()
                     # 构建内容摘要指纹：组合多个字段，限制最大长度防止内存过大
                     outline = ' '.join(x for x in [
