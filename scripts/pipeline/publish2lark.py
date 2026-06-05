@@ -12,7 +12,7 @@ from typing import Optional
 
 # 路径设置
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_PROJECT_ROOT = _SCRIPT_DIR.parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent.parent
 _SECRETS_FILE = _PROJECT_ROOT / 'config' / 'secrets.json'
 
 

@@ -35,9 +35,13 @@ project-space/logs/
 skills/
 skills-lock.json
 
-# 工作流配置
+# 项目内部研发文档（不对外公开）
+项目研发沉底SKILL/
+
+# 工作流配置（实际运行用，非示例）
 ai-frontier-daily.lobster
 ai-frontier-daily-no-wechat.lobster
+references/ai-frontier-daily.lobster
 
 # 操作系统
 .DS_Store
@@ -59,3 +63,11 @@ scripts/inline_styles.py
 
 project-space/config/briefing-template-bold-navy.html.j2
 project-space/config/briefing-template-wechat-card.html.j2
+
+project-space2/config/auth.json
+project-space2/config/xhs-auth.json
+project-space2/config/*.png
+project-space2/node_modules/
+project-space2/dist/
+
+docs/todo.md

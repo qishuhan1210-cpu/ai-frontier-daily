@@ -1,0 +1,30 @@
+{
+  "name": "wechat-mp-automation",
+  "version": "1.0.0",
+  "description": "微信公众号页面自动化",
+  "main": "src/index.ts",
+  "bin": {
+    "wechat-mp": "src/index.ts"
+  },
+  "scripts": {
+    "wechat-mp": "npx tsx src/index.ts",
+    "save-auth": "npx tsx src/index.ts save-auth",
+    "publish": "npx tsx src/index.ts publish",
+    "xhs-save-auth": "npx tsx src/index.ts xhs-save-auth",
+    "xhs-publish": "npx tsx src/index.ts xhs-publish",
+    "install-browsers": "npx playwright install"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/js-yaml": "^4.0.9",
+    "commander": "^14.0.3",
+    "js-yaml": "^4.2.0",
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "@types/commander": "^2.12.0",
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

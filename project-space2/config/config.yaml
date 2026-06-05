@@ -1,0 +1,47 @@
+# 运行环境配置
+env:
+  chrome_path: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  user_data_dir: ~/Library/Application Support/Google/Chrome
+
+# 微信公众号配置
+wechat:
+  # 路径
+  auth_file: auth.json
+  base_dir: ../../output
+  html_filename: briefing-wechat.html
+
+  # 流程
+  wechat_url: https://mp.weixin.qq.com
+  login_check_selector: .weui-desktop-account__info
+  article_btn_selector: '.new-creation__menu-item:has(.new-creation__menu-title:text("文章"))'
+  title_selector: ".title-editor-overlay .ProseMirror[contenteditable='true']"
+  editor_selector: '#edui1_iframeholder .mock-iframe-body div.ProseMirror[contenteditable="true"]'
+  cover_upload_selector: '#js_cover_area input[type="file"]'
+  save_draft_selector: 'button:has-text("保存为草稿")'
+
+  # 静态资源
+  cover_image: 微信公众号_AI前沿早报-封面图.png
+
+  # 内容模板
+  article_title_template: "AI 前沿早报（{date}）"
+
+# 小红书配置
+xhs:
+  # 路径
+  auth_file: xhs-auth.json
+  base_dir: ../../output
+  images_dir_name: redbook-png
+  text_filename: briefing-xhs-text.txt
+
+  # 流程
+  xhs_url: https://creator.xiaohongshu.com/publish/publish
+  login_check_selector: "input[type=\"file\"][accept*=\"image\"], .drag-upload-area"
+  image_tab_selector: "text=发布图文"
+  image_upload_selector: "input[type=\"file\"][accept*=\"image\"]"
+  title_selector: "input[placeholder*=\"填写标题\"]"
+  editor_selector: ".ql-editor[contenteditable=\"true\"]"
+  upload_done_selector: ".upload-progress"
+  publish_btn_selector: "button:has-text(\"发布笔记\")"
+
+  # 内容模板
+  article_title_template: "AI 前沿早报（{date}）"

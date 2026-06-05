@@ -1,5 +1,40 @@
 ## 变更日志
 
+### 2026-06-05 (commit: -)，作者：wghlmg1210
+
+#### 研发工程
+
+##### 1. 新增多平台浏览器自动化模块（project-space2）
+
+- **main、auth、publisher、config** - 新增 `project-space2/`；支持微信公众号和小红书图文双平台自动发布；使用 TypeScript + Playwright，统一 CLI 入口（commander），配置集中到单一 YAML 文件
+
+##### 2. 小红书截图脚本迁移并升级为 TypeScript
+
+- **screenshot-redbook-cdp** - 从 `scripts/screenshot-redbook-cdp.js` 迁移至 `project-space2/src/services/screenshot-redbook-cdp.ts`；升级为 TypeScript，路径计算适配新目录层级
+
+##### 3. 流水线脚本目录重组
+
+- **news_frontier** - 从 `scripts/` 迁移至 `project-space/`，路径解析适配
+- **publish2lark、publish2lark_base、push2group** - 从 `scripts/` 迁移至 `scripts/pipeline/`，`_PROJECT_ROOT` 路径上移一级适配
+
+##### 4. lark_commander 路径查找修复
+
+- **lark_commander** - 改用 `shutil.which` 动态查找 `lark-cli` 路径，兼容非 PATH 默认安装位置
+
+#### Skill 框架
+
+##### 5. 新增整合 pipeline 脚本
+
+- **scripts/pipeline.sh** - 新增一键运行脚本；整合新闻采集 → 飞书文档 → 小红书截图 → 飞书群推送 → 微信草稿五个步骤
+
+##### 6. 配置与文档同步更新
+
+- **【移除事项】** 删除已被内化的 `render_wechat.sh`
+- **【更新事项】** `.lobster` 工作流各步骤路径同步更新至新结构；`.gitignore` 补充 `project-space2/` 忽略规则、研发文档目录及 lobster 实例文件
+- **【新增事项】** `docs/2026-06-03-安装playwright.md` - 新增 `project-space2` Playwright 自动化使用文档
+
+---
+
 ### 2026-05-26 (commit: -)，作者：wghlmg1210
 
 #### 研发工程

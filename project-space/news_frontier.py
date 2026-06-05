@@ -27,7 +27,7 @@ from typing import List
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-PROJECT_SPACE = os.path.join(PROJECT_ROOT, 'project-space')
+PROJECT_SPACE = SCRIPT_DIR
 
 sys.path.insert(0, PROJECT_SPACE)
 

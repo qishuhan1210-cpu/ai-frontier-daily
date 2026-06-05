@@ -16,19 +16,19 @@ steps:
 
   # 1. 新闻采集
   - id: news_frontier
-    command: $SKILL_DIR/scripts/base/run.sh python scripts/news_frontier.py --date $(date +%Y-%m-%d)
+    command: $SKILL_DIR/scripts/base/run.sh python project-space/news_frontier.py --date $(date +%Y-%m-%d)
 
   # 2. 发布飞书文档 (重定向到 /tmp 目录)
   - id: publish2lark
-    command: bash -c '$SKILL_DIR/scripts/base/run.sh python scripts/publish2lark.py --date $(date +%Y-%m-%d) > /tmp/afinfo-doc_url.txt'
+    command: bash -c '$SKILL_DIR/scripts/base/run.sh python scripts/pipeline/publish2lark.py --date $(date +%Y-%m-%d) > /tmp/afinfo-doc_url.txt'
 
   # 3. 推送飞书群 (从 /tmp 读取文件)
   - id: push2group
-    command: bash -c 'DOC_URL=$(cat /tmp/afinfo-doc_url.txt) && $SKILL_DIR/scripts/base/run.sh python scripts/push2group.py --date $(date +%Y-%m-%d) --doc-url "$DOC_URL"'
+    command: bash -c 'DOC_URL=$(cat /tmp/afinfo-doc_url.txt) && $SKILL_DIR/scripts/base/run.sh python scripts/pipeline/push2group.py --date $(date +%Y-%m-%d) --doc-url "$DOC_URL"'
 
   # 4. 更新多维表格
   - id: publish2lark_base
-    command: bash -c '$SKILL_DIR/scripts/base/run.sh python scripts/publish2lark_base.py --date $(date +%Y-%m-%d) > /tmp/afinfo-base_url.txt'
+    command: bash -c '$SKILL_DIR/scripts/base/run.sh python scripts/pipeline/publish2lark_base.py --date $(date +%Y-%m-%d) > /tmp/afinfo-base_url.txt'
 
   # 5. 最终报告
   - id: final_report

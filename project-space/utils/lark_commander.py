@@ -1,14 +1,60 @@
 """LarkCommander — 桥接层，根据配置动态选择实现"""
 
 from __future__ import annotations
-
-import json
-import logging
-from pathlib import Path
+import shutil
+import subprocess
 from typing import Optional
 
-# 配置日志
-logger = logging.getLogger(__name__)
+_LARK_CLI = shutil.which('lark-cli') or 'lark-cli'
+
+
+class _LarkCommand:
+    """lark-cli 命令实例（由 LarkCmd.args() 创建）"""
+
+    def __init__(self, template: list[str]):
+        self._template = template
+        self._kwargs: dict = {}
+        self._input_text: Optional[str] = None
+
+    def args(self, **kwargs) -> '_LarkCommand':
+        """设置命令模板中的占位符参数"""
+        self._kwargs.update(kwargs)
+        return self
+
+    def input(self, text: str) -> '_LarkCommand':
+        """设置 stdin 输入内容（如文档正文）"""
+        self._input_text = text
+        return self
+
+    def run(self, logger=None) -> Optional[str]:
+        """执行 lark-cli 命令
+
+        Args:
+            logger: 可选 logger 实例，用于记录错误日志
+
+        Returns:
+            命令执行成功返回 stdout（去除空白和 'null'），失败返回 None
+        """
+        cmd_args = [arg.format(**self._kwargs) for arg in self._template]
+
+        result = subprocess.run(
+            [_LARK_CLI] + cmd_args,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            input=self._input_text
+        )
+
+        if result.returncode != 0:
+            msg = f"命令执行失败: {' '.join(cmd_args)}"
+            if result.stderr:
+                msg += f" - {result.stderr.strip()}"
+            if logger:
+                logger.error(msg)
+            return None
+
+        output = result.stdout.strip()
+        return output if output and output != 'null' else None
 
 
 def _get_use_sdk() -> bool:

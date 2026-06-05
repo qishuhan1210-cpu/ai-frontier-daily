@@ -1,77 +1,88 @@
 #!/usr/bin/env node
 /**
- * screenshot-redbook-cdp.js — 小红书卡片批量截图（Chrome CDP 版）
+ * screenshot-redbook-cdp.ts — 小红书卡片批量截图（Chrome CDP 版）
  *
- * 用法: node screenshot-redbook-cdp.js [date]
+ * 用法: npx tsx screenshot-redbook-cdp.ts [date]
  *   date: 日期，格式 YYYY-MM-DD，默认今天
  *
  * 输入: output/{date}/redbook/*.html
  * 输出: output/{date}/redbook-png/*.png
  *
  * 架构: CDPClient → HeadlessBrowser → RedbookScreenshot
- * 详见: docs/2026-05-26-chrome-cdp-screenshot-design.md
  */
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const http = require('http');
-const net = require('net');
+import { spawn, ChildProcess } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import * as http from 'http';
+import * as net from 'net';
 
 // ============ Config — 统一配置管理 ============
 class Config {
-  static CHROME_BIN = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  static CHROME_BIN: string = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
   // 截图参数
-  static DEVICE_SCALE = 2;
-  static PADDING = 5;
+  static DEVICE_SCALE: number = 2;
+  static PADDING: number = 5;
 
   // 视口参数
-  static VIEWPORT_WIDTH = 1200;
-  static VIEWPORT_HEIGHT = 2000;
-  static WINDOW_SIZE = `${Config.VIEWPORT_WIDTH},${Config.VIEWPORT_HEIGHT}`;
-  static HEADLESS = true;
+  static VIEWPORT_WIDTH: number = 1200;
+  static VIEWPORT_HEIGHT: number = 2000;
+  static WINDOW_SIZE: string = `${Config.VIEWPORT_WIDTH},${Config.VIEWPORT_HEIGHT}`;
+  static HEADLESS: boolean = true;
 
   // 时序参数
-  static CDP_TIMEOUT = 15000;
-  static CHROME_READY_RETRIES = 60;
-  static CHROME_READY_INTERVAL = 500;
-  static PAGE_NAVIGATE_WAIT = 500;
-  static SCREENSHOT_WAIT = 200;
+  static CDP_TIMEOUT: number = 15000;
+  static CHROME_READY_RETRIES: number = 60;
+  static CHROME_READY_INTERVAL: number = 500;
+  static PAGE_NAVIGATE_WAIT: number = 500;
+  static SCREENSHOT_WAIT: number = 200;
 
   // 卡片选择器（按优先级）
-  static CARD_SELECTORS = ['section.quick-view-card', 'section.news-card'];
+  static CARD_SELECTORS: string[] = ['section.quick-view-card', 'section.news-card'];
 
-  // 目录结构
-  static BASE_DIR = path.resolve(__dirname, '..', 'output');
-  static REDBOOK_SUBDIR = 'redbook';
-  static OUTPUT_SUBDIR = 'redbook-png';
+  // 目录结构（从 project-space2/src/services/ 向上三级到项目根，再进 output/）
+  static BASE_DIR: string = path.resolve(__dirname, '..', '..', '..', 'output');
+  static REDBOOK_SUBDIR: string = 'redbook';
+  static OUTPUT_SUBDIR: string = 'redbook-png';
 }
 
 // ============ Logger ============
 class Logger {
-  static NAME = 'screenshot-redbook-cdp';
+  static NAME: string = 'screenshot-redbook-cdp';
+  private _logFile: string;
 
-  constructor(date) {
+  constructor(date: string) {
     const logDir = path.resolve(Config.BASE_DIR, date);
     fs.mkdirSync(logDir, { recursive: true });
     this._logFile = path.join(logDir, 'run.log');
   }
 
-  _write(level, msg) {
+  private _write(level: string, msg: string): void {
     const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const line = `${ts} - ${Logger.NAME} - ${level.padEnd(8)} - ${msg}\n`;
     fs.appendFileSync(this._logFile, line, 'utf-8');
   }
 
-  info(msg)    { console.log(msg);   this._write('INFO', msg); }
-  warning(msg) { console.warn(msg);  this._write('WARNING', msg); }
+  info(msg: string): void    { console.log(msg);   this._write('INFO', msg); }
+  warning(msg: string): void { console.warn(msg);  this._write('WARNING', msg); }
 }
 
 // ============ CDPClient — WebSocket 通信层 ============
+interface PendingCallback {
+  resolve: (value: any) => void;
+  reject: (reason: Error) => void;
+}
+
 class CDPClient {
-  constructor(wsUrl) {
+  private _wsUrl: string;
+  private _msgId: number;
+  private _pending: Map<number, PendingCallback>;
+  private _buf: Buffer;
+  private _sock: net.Socket | null;
+
+  constructor(wsUrl: string) {
     this._wsUrl = wsUrl;
     this._msgId = 1;
     this._pending = new Map();
@@ -79,12 +90,12 @@ class CDPClient {
     this._sock = null;
   }
 
-  connect() {
+  connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       const url = new URL(this._wsUrl);
       this._sock = net.createConnection({ host: url.hostname, port: parseInt(url.port) }, () => {
         const key = Buffer.from(Math.random().toString()).toString('base64');
-        this._sock.write([
+        this._sock!.write([
           `GET ${url.pathname} HTTP/1.1`,
           `Host: ${url.host}`,
           'Upgrade: websocket',
@@ -94,9 +105,9 @@ class CDPClient {
           '', '',
         ].join('\r\n'));
       });
-      this._sock.once('data', chunk => {
+      this._sock.once('data', (chunk: Buffer) => {
         if (chunk.toString().includes('101')) {
-          this._sock.on('data', c => this._onFrame(c));
+          this._sock!.on('data', (c: Buffer) => this._onFrame(c));
           resolve();
         } else {
           reject(new Error('WebSocket 握手失败'));
@@ -106,7 +117,7 @@ class CDPClient {
     });
   }
 
-  _onFrame(chunk) {
+  private _onFrame(chunk: Buffer): void {
     this._buf = Buffer.concat([this._buf, chunk]);
     while (this._buf.length >= 2) {
       const b1 = this._buf[1];
@@ -125,7 +136,7 @@ class CDPClient {
       let payload = this._buf.slice(offset + (masked ? 4 : 0), total);
       if (masked) {
         const mask = this._buf.slice(offset, offset + 4);
-        payload = Buffer.from(payload.map((b, i) => b ^ mask[i % 4]));
+        payload = Buffer.from(payload.map((b: number, i: number) => b ^ mask[i % 4]));
       }
       this._buf = this._buf.slice(total);
       try {
@@ -139,10 +150,10 @@ class CDPClient {
     }
   }
 
-  _frame(data) {
+  private _frame(data: string): Buffer {
     const payload = Buffer.from(data);
     const len = payload.length;
-    let header;
+    let header: Buffer;
     if (len < 126) {
       header = Buffer.from([0x81, 0x80 | len]);
     } else if (len < 65536) {
@@ -155,15 +166,15 @@ class CDPClient {
       header.writeBigUInt64BE(BigInt(len), 2);
     }
     const mask = Buffer.alloc(4);
-    const masked = Buffer.from(payload.map((b, i) => b ^ mask[i % 4]));
+    const masked = Buffer.from(payload.map((b: number, i: number) => b ^ mask[i % 4]));
     return Buffer.concat([header, mask, masked]);
   }
 
-  send(method, params = {}) {
+  send(method: string, params: object = {}): Promise<any> {
     return new Promise((resolve, reject) => {
       const id = this._msgId++;
       this._pending.set(id, { resolve, reject });
-      this._sock.write(this._frame(JSON.stringify({ id, method, params })));
+      this._sock!.write(this._frame(JSON.stringify({ id, method, params })));
       setTimeout(() => {
         if (this._pending.has(id)) {
           this._pending.delete(id);
@@ -173,34 +184,54 @@ class CDPClient {
     });
   }
 
-  close() { try { this._sock?.destroy(); } catch {} }
+  close(): void { try { this._sock?.destroy(); } catch {} }
 }
 
 // ============ HeadlessBrowser — Chrome 进程管理 + CDP 操作 ============
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 class HeadlessBrowser {
+  private _proc: ChildProcess | null;
+  private _cdp: CDPClient | null;
+  private _port: number | null;
+
   constructor() {
     this._proc = null;
     this._cdp = null;
     this._port = null;
   }
 
-  static _findFreePort() {
+  private static _findFreePort(): Promise<number> {
     return new Promise((resolve, reject) => {
       const srv = net.createServer();
-      srv.listen(0, '127.0.0.1', () => { const p = srv.address().port; srv.close(() => resolve(p)); });
+      srv.listen(0, '127.0.0.1', () => {
+        const p = (srv.address() as net.AddressInfo).port;
+        srv.close(() => resolve(p));
+      });
       srv.on('error', reject);
     });
   }
 
-  static _httpGet(url) {
+  private static _httpGet(url: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      http.get(url, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(d)); }).on('error', reject);
+      http.get(url, res => {
+        let d = '';
+        res.on('data', (c: string) => d += c);
+        res.on('end', () => resolve(d));
+      }).on('error', reject);
     });
   }
 
-  static _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  private static _sleep(ms: number): Promise<void> {
+    return new Promise(r => setTimeout(r, ms));
+  }
 
-  async launch() {
+  async launch(): Promise<void> {
     this._port = await HeadlessBrowser._findFreePort();
     const userDataDir = path.join(os.tmpdir(), `chrome-cdp-${Date.now()}`);
     fs.mkdirSync(userDataDir, { recursive: true });
@@ -216,8 +247,10 @@ class HeadlessBrowser {
     ].filter(Boolean), { stdio: ['pipe', 'pipe', 'pipe'] });
 
     await this._waitReady();
-    const tabs = JSON.parse(await HeadlessBrowser._httpGet(`http://127.0.0.1:${this._port}/json/list`));
-    const tab = tabs.find(t => t.type === 'page');
+    const tabs: any[] = JSON.parse(
+      await HeadlessBrowser._httpGet(`http://127.0.0.1:${this._port}/json/list`)
+    );
+    const tab = tabs.find((t: any) => t.type === 'page');
     if (!tab) throw new Error('未找到 Chrome page tab');
 
     this._cdp = new CDPClient(tab.webSocketDebuggerUrl);
@@ -225,21 +258,25 @@ class HeadlessBrowser {
     await this._cdp.send('Page.enable');
   }
 
-  async _waitReady() {
+  private async _waitReady(): Promise<void> {
     for (let i = 0; i < Config.CHROME_READY_RETRIES; i++) {
-      try { await HeadlessBrowser._httpGet(`http://127.0.0.1:${this._port}/json/version`); return; }
-      catch { await HeadlessBrowser._sleep(Config.CHROME_READY_INTERVAL); }
+      try {
+        await HeadlessBrowser._httpGet(`http://127.0.0.1:${this._port}/json/version`);
+        return;
+      } catch {
+        await HeadlessBrowser._sleep(Config.CHROME_READY_INTERVAL);
+      }
     }
     throw new Error('Chrome 启动超时');
   }
 
-  async open(fileUrl) {
-    await this._cdp.send('Page.navigate', { url: fileUrl });
+  async open(fileUrl: string): Promise<void> {
+    await this._cdp!.send('Page.navigate', { url: fileUrl });
     await HeadlessBrowser._sleep(Config.PAGE_NAVIGATE_WAIT);
   }
 
-  async queryRect(selector) {
-    const res = await this._cdp.send('Runtime.evaluate', {
+  async queryRect(selector: string): Promise<Rect | null> {
+    const res = await this._cdp!.send('Runtime.evaluate', {
       expression: `(function(){
         const el = document.querySelector('${selector}');
         if (!el) return null;
@@ -251,13 +288,13 @@ class HeadlessBrowser {
     return res?.result?.value ?? null;
   }
 
-  async screenshot(rect, outputPath) {
+  async screenshot(rect: Rect, outputPath: string): Promise<number> {
     const clipX = Math.max(0, Math.floor(rect.x) - Config.PADDING);
     const clipY = Math.max(0, Math.ceil(rect.y) - Config.PADDING);
     const clipW = Math.max(0, Math.ceil(rect.width) + 2 * Config.PADDING);
     const clipH = Math.max(0, Math.ceil(rect.height) + 2 * Config.PADDING);
 
-    await this._cdp.send('Emulation.setDeviceMetricsOverride', {
+    await this._cdp!.send('Emulation.setDeviceMetricsOverride', {
       width: Config.VIEWPORT_WIDTH,
       height: Config.VIEWPORT_HEIGHT,
       deviceScaleFactor: Config.DEVICE_SCALE,
@@ -265,7 +302,7 @@ class HeadlessBrowser {
     });
     await HeadlessBrowser._sleep(Config.SCREENSHOT_WAIT);
 
-    const res = await this._cdp.send('Page.captureScreenshot', {
+    const res = await this._cdp!.send('Page.captureScreenshot', {
       format: 'png',
       clip: { x: clipX, y: clipY, width: clipW, height: clipH, scale: 1 },
     });
@@ -274,7 +311,7 @@ class HeadlessBrowser {
     return fs.statSync(outputPath).size;
   }
 
-  close() {
+  close(): void {
     try { this._cdp?.close(); } catch {}
     try { this._proc?.kill('SIGKILL'); } catch {}
   }
@@ -282,27 +319,33 @@ class HeadlessBrowser {
 
 // ============ RedbookScreenshot — 业务流程层 ============
 class RedbookScreenshot {
-  constructor(date) {
+  private date: string;
+  private redbookDir: string;
+  private outputDir: string;
+  private logger: Logger;
+  private htmlFiles: string[] = [];
+
+  constructor(date: string) {
     this.date = date;
     this.redbookDir = path.join(Config.BASE_DIR, date, Config.REDBOOK_SUBDIR);
     this.outputDir = path.join(Config.BASE_DIR, date, Config.OUTPUT_SUBDIR);
     this.logger = new Logger(date);
   }
 
-  validate() {
+  validate(): this {
     if (!fs.existsSync(this.redbookDir)) throw new Error(`redbook 目录不存在: ${this.redbookDir}`);
     if (!fs.existsSync(Config.CHROME_BIN)) throw new Error(`未找到 Chrome: ${Config.CHROME_BIN}`);
 
     this.htmlFiles = fs.readdirSync(this.redbookDir)
-      .filter(f => f.endsWith('.html')).sort()
-      .map(f => path.join(this.redbookDir, f));
+      .filter((f: string) => f.endsWith('.html')).sort()
+      .map((f: string) => path.join(this.redbookDir, f));
 
     if (this.htmlFiles.length === 0) throw new Error('redbook 目录中没有 HTML 文件');
     fs.mkdirSync(this.outputDir, { recursive: true });
     return this;
   }
 
-  logSummary() {
+  logSummary(): void {
     this.logger.info(`📁 日期: ${this.date}`);
     this.logger.info(`📁 输入: ${this.redbookDir}`);
     this.logger.info(`📁 输出: ${this.outputDir}`);
@@ -310,14 +353,15 @@ class RedbookScreenshot {
     this.logger.info(`📄 找到 ${this.htmlFiles.length} 个文件`);
   }
 
-  async processOne(browser, htmlFile, index, total) {
+  async processOne(browser: HeadlessBrowser, htmlFile: string, index: number, total: number): Promise<boolean> {
     const basename = path.basename(htmlFile, '.html');
     this.logger.info(` [${index + 1}/${total}] 处理: ${basename}.html`);
 
     await browser.open(`file://${htmlFile}`);
     this.logger.info('  ✓ 页面已加载');
 
-    let rect = null, matched = null;
+    let rect: Rect | null = null;
+    let matched: string | null = null;
     for (const sel of Config.CARD_SELECTORS) {
       rect = await browser.queryRect(sel);
       if (rect) { matched = sel; break; }
@@ -334,7 +378,7 @@ class RedbookScreenshot {
     return true;
   }
 
-  async run() {
+  async run(): Promise<{ total: number; success: number }> {
     this.validate();
     this.logSummary();
 
@@ -361,7 +405,7 @@ class RedbookScreenshot {
 
 // ============ 入口 ============
 const date = process.argv[2] || new Date().toISOString().slice(0, 10);
-new RedbookScreenshot(date).run().catch(err => {
+new RedbookScreenshot(date).run().catch((err: Error) => {
   console.error('❌ 错误:', err.message);
   process.exit(1);
 });
