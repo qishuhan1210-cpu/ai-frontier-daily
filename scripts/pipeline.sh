@@ -52,10 +52,3 @@ echo ""
 echo "[4/5] 微信公众号草稿发布..."
 "$SKILL_DIR/scripts/base/run.sh" node "$SKILL_DIR/project-space2/node_modules/.bin/tsx" project-space2/src/main.ts publish "$DATE"
 echo "  ✓ 微信草稿保存完成"
-
-# 5. 最终报告
-echo ""
-echo "======================================"
-echo "✅ 完成！"
-echo "📄 文档：$(cat /tmp/afinfo-doc_url.txt)"
-echo "======================================"

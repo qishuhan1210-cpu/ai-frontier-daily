@@ -3,7 +3,14 @@
 from __future__ import annotations
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Optional
+
+import json
+import logging
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 _LARK_CLI = shutil.which('lark-cli') or 'lark-cli'
 
@@ -168,7 +175,7 @@ if 'use_sdk' in locals() and not use_sdk:
         WIKI_NODE_SEARCH_BITABLE = _LarkCommand(['wiki', '+node-list', '--as', 'user', '--space-id', '{space_id}', '--page-all', '-q', '.data.nodes[] | select(.obj_type == "bitable" and (.title | contains("{keyword}"))) | {{node_token: .node_token, obj_token: .obj_token, title: .title}}'])
         WIKI_NODE_CREATE = _LarkCommand(['wiki', '+node-create', '--as', 'user', '--space-id', '{space_id}', '--obj-type', 'docx', '--title', '{title}', '-q', '.data.node_token'])
         WIKI_NODE_CREATE_WITH_PARENT = _LarkCommand(['wiki', '+node-create', '--as', 'user', '--space-id', '{space_id}', '--title', '{title}', '--parent-node-token', '{parent_token}', '-q', '.data.node_token'])
-        WIKI_NODE_MOVE = _LarkCommand(['wiki', '+move', '--as', 'user', '--node-token', '{node_token}', '--target-parent-token', '{target_token}'])
+        WIKI_NODE_MOVE = _LarkCommand(['wiki', '+move', '--as', 'user', '--node-token', '{node_token}', '--target-parent-token', '{target_parent_token}'])
 
         # === Docs 命令 ===
         DOC_UPDATE = _LarkCommand(['docs', '+update', '--api-version', 'v1', '--as', 'user', '--doc', '{doc_token}', '--new-title', '{title}', '--mode', 'overwrite', '--markdown', '-'])
