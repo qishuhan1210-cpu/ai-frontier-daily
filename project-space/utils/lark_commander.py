@@ -153,7 +153,7 @@ if 'use_sdk' in locals() and not use_sdk:
             cmd_args = [arg.format(**filtered_kwargs) for arg in self._template]
             
             result = subprocess.run(
-                ['lark-cli'] + cmd_args,
+                [_LARK_CLI] + cmd_args,
                 capture_output=True,
                 text=True,
                 encoding='utf-8',

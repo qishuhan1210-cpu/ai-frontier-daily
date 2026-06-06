@@ -35,13 +35,20 @@ xhs:
 
   # 流程
   xhs_url: https://creator.xiaohongshu.com/publish/publish
-  login_check_selector: "input[type=\"file\"][accept*=\"image\"], .drag-upload-area"
-  image_tab_selector: "text=发布图文"
-  image_upload_selector: "input[type=\"file\"][accept*=\"image\"]"
-  title_selector: "input[placeholder*=\"填写标题\"]"
-  editor_selector: ".ql-editor[contenteditable=\"true\"]"
-  upload_done_selector: ".upload-progress"
-  publish_btn_selector: "button:has-text(\"发布笔记\")"
+  login_check_selector: ".d-topbar-title"
+  image_tab_selector: ".creator-tab[data-hp-bound='1']:has-text(\"上传图文\")"
+  image_upload_selector: "button.upload-button:has-text(\"上传图片\")"
+  title_selector: "input[placeholder*=\"填写标题会有更多赞\"]"
+  editor_selector: ".tiptap.ProseMirror[contenteditable=\"true\"]"
+  publish_btn_selector: "xhs-publish-btn"
+  publish_confirm_btn_selector: "xhs-publish-btn >> .ce-btn.bg-red"
+  schedule_switch_selector: ".post-time-wrapper .custom-switch-switch .d-switch"
+  schedule_datetime_selector: ".d-datepicker-input-filter input.d-text"
+  schedule_time: "18:00"
 
   # 内容模板
   article_title_template: "AI 前沿早报（{date}）"
+  tags:
+    - "小红书科技AMA"
+    - "AI早报"
+    - "大模型"

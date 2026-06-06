@@ -1,5 +1,43 @@
 ## 变更日志
 
+### 2026-06-06 (commit: -)，作者：wghlmg1210
+
+#### 研发工程
+
+##### 1. 自动化模块拆分重构（微信 & 小红书解耦）
+
+- **main（删除）** - 删除单体入口文件，拆分为独立的微信、小红书 CLI 模块
+- **wechat、xiaohongshu** - 新增独立 CLI 入口，各平台命令独立管理
+- **wechat-publisher、xhs-publisher** - 新增各平台业务流程层，封装完整发布流程
+- **actions** - 新增业务语义层，将浏览器操作组合为高层业务动作
+- **base-browser** - 新增浏览器操作基类，提取通用操作；派生 `WechatBrowserOps`、`XhsBrowserOps` 两个平台子类
+- **publisher（删除）** - 原有函数式 publisher 内化至各平台类中
+- **package.json** - 命令脚本按平台拆分，新增 `wechat-*` / `xhs-*` 独立指令
+
+##### 2. 小红书自动化深度构建
+
+- **xhs-publisher、actions、base-browser** - 完整构建小红书图文笔记发布链路：登录态检测 → 图片上传 → 填标题正文 → 标签选择 → 定时发布配置 → 发布
+- **xhs-publisher** - 新增 `summary.json` 驱动的正文自动生成；图片按 `quick-view` → `card-*` 顺序排列
+- **xhs-publisher** - 新增定时发布逻辑：按配置时间判断是否需要定时，自动切换直接发布 / 定时发布模式
+- **config** - 小红书 selector 全面更新，对齐最新创作者平台页面结构；新增定时发布、Tags 等配置项
+
+##### 3. Vue 隐藏组件绕行方案（发布按钮）
+
+- **base-browser（XhsBrowserOps.clickPublishBtn）** - `xhs-publish-btn` 为 Vue Web Component，内部 DOM 不可直接查询；改用 `boundingBox` 定位元素坐标后，通过 `page.mouse.click` 模拟点击右侧红色发布区域，绕过 Shadow DOM 限制
+
+##### 4. 微信公众号模块修复
+
+- **assemble** - 注释掉发布后自动打开文件的调用，修复流程意外弹窗问题
+- **lark_commander** - 修复 `lark-cli` 路径引用，改用变量 `_LARK_CLI` 提升一致性
+
+#### Skill 框架
+
+##### 5. 流水线脚本调整
+
+- **scripts/pipeline.sh** - 新增小红书定时发布步骤；微信入口切换至 `src/wechat.ts`；暂时注释飞书文档发布和群推送步骤，聚焦核心自动发布链路
+
+---
+
 ### 2026-06-05 (commit: -)，作者：wghlmg1210
 
 #### 研发工程

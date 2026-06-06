@@ -173,7 +173,7 @@ class AssembleModule(WorkModule):
         redbook_paths = self._render_redbook_cards(clusters, ctx['footer'], output_dir)
 
         ## 自动打开文件
-        self._open_file(wechat_file)
+        # self._open_file(wechat_file)
 
         return {
             'path': feishu_file,

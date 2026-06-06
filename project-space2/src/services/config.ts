@@ -33,13 +33,9 @@ export const CONFIG = {
 
 // ============ 小红书配置 ============
 export const XHS_CONFIG = {
-  CHROME_PATH: env.chrome_path as string,
-  USER_DATA_DIR: path.resolve((env.user_data_dir as string).replace('~', _home)),
-
   XHS_AUTH_FILE: path.resolve(_configDir, xhs.auth_file as string),
   BASE_DIR: path.resolve(_configDir, xhs.base_dir as string),
   IMAGES_DIR_NAME: xhs.images_dir_name as string,
-  TEXT_FILENAME: xhs.text_filename as string,
 
   XHS_URL: xhs.xhs_url as string,
   LOGIN_CHECK_SELECTOR: xhs.login_check_selector as string,
@@ -47,8 +43,11 @@ export const XHS_CONFIG = {
   IMAGE_UPLOAD_SELECTOR: xhs.image_upload_selector as string,
   TITLE_SELECTOR: xhs.title_selector as string,
   EDITOR_SELECTOR: xhs.editor_selector as string,
-  UPLOAD_DONE_SELECTOR: xhs.upload_done_selector as string,
-  PUBLISH_BTN_SELECTOR: xhs.publish_btn_selector as string,
+  PUBLISH_CONFIRM_BTN_SELECTOR: xhs.publish_confirm_btn_selector as string,
+  SCHEDULE_SWITCH_SELECTOR: xhs.schedule_switch_selector as string,
+  SCHEDULE_DATETIME_SELECTOR: xhs.schedule_datetime_selector as string,
+  SCHEDULE_TIME: xhs.schedule_time as string,
 
   ARTICLE_TITLE_TEMPLATE: xhs.article_title_template as string,
+  TAGS: (xhs.tags as string[]) || [],
 };

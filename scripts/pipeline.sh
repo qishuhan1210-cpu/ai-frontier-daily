@@ -29,26 +29,32 @@ echo "[1/5] 新闻采集..."
 echo "  ✓ 新闻采集完成"
 
 # 2. 发布飞书文档
-echo ""
-echo "[2/5] 发布飞书文档..."
-"$SKILL_DIR/scripts/base/run.sh" python scripts/pipeline/publish2lark.py --date "$DATE" > /tmp/afinfo-doc_url.txt
-echo "  ✓ 飞书文档已发布: $(cat /tmp/afinfo-doc_url.txt)"
+# echo ""
+# echo "[2/5] 发布飞书文档..."
+# "$SKILL_DIR/scripts/base/run.sh" python scripts/pipeline/publish2lark.py --date "$DATE" > /tmp/afinfo-doc_url.txt
+# echo "  ✓ 飞书文档已发布: $(cat /tmp/afinfo-doc_url.txt)"
 
-# 2.5 小红书卡片截图
+# 2 小红书卡片截图
 echo ""
 echo "[2.5/5] 小红书卡片截图..."
 "$SKILL_DIR/scripts/base/run.sh" node "$SKILL_DIR/project-space2/node_modules/.bin/tsx" project-space2/src/services/screenshot-redbook-cdp.ts "$DATE"
 echo "  ✓ 小红书截图完成"
 
 # 3. 推送飞书群
-echo ""
-echo "[3/5] 推送飞书群..."
-DOC_URL=$(cat /tmp/afinfo-doc_url.txt)
-"$SKILL_DIR/scripts/base/run.sh" python scripts/pipeline/push2group.py --date "$DATE" --doc-url "$DOC_URL"
-echo "  ✓ 飞书群推送完成"
+# echo ""
+# echo "[3/5] 推送飞书群..."
+# DOC_URL=$(cat /tmp/afinfo-doc_url.txt)
+# "$SKILL_DIR/scripts/base/run.sh" python scripts/pipeline/push2group.py --date "$DATE" --doc-url "$DOC_URL"
+# echo "  ✓ 飞书群推送完成"
 
 # 4. 微信公众号草稿发布
 echo ""
 echo "[4/5] 微信公众号草稿发布..."
-"$SKILL_DIR/scripts/base/run.sh" node "$SKILL_DIR/project-space2/node_modules/.bin/tsx" project-space2/src/main.ts publish "$DATE"
+"$SKILL_DIR/scripts/base/run.sh" node "$SKILL_DIR/project-space2/node_modules/.bin/tsx" project-space2/src/wechat.ts publish "$DATE"
 echo "  ✓ 微信草稿保存完成"
+
+# 5. 小红书定时发布
+echo ""
+echo "[4/5] 小红书定时发布..."
+"$SKILL_DIR/scripts/base/run.sh" node "$SKILL_DIR/project-space2/node_modules/.bin/tsx" project-space2/src/xiaohongshu.ts publish "$DATE"
+echo "  ✓ 小红书定时发布完成"
