@@ -387,7 +387,8 @@ class IngestModule(WorkModule):
         # 第一步：加载近 n_days 天的历史摘要指纹
         for i in range(1, n_days + 1):
             d = (base - timedelta(days=i)).strftime('%Y-%m-%d')
-            path = self._app_config.output_dir(d) / FN_SUMMARY
+            # 使用历史日期的目录，而不是当前日期的目录
+            path = self._app_config.paths.output_dir().parent / d / FN_SUMMARY
             if not path.exists():
                 continue
             try:
