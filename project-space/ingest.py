@@ -387,7 +387,7 @@ class IngestModule(WorkModule):
         # 第一步：加载近 n_days 天的历史摘要指纹
         for i in range(1, n_days + 1):
             d = (base - timedelta(days=i)).strftime('%Y-%m-%d')
-            path = self._app_config.paths.output_dir() / FN_SUMMARY
+            path = self._app_config.output_dir(d) / FN_SUMMARY
             if not path.exists():
                 continue
             try:
@@ -426,24 +426,41 @@ class IngestModule(WorkModule):
             matched_days = set()
             for day_idx, day_fps in fingerprints_by_day.items():
                 for fp in day_fps:
+                    matched_reason = None
                     # 层级1：URL 精确匹配（最高优先级）
                     if url and fp['url_norm'] and url == fp['url_norm']:
+                        matched_reason = f"URL匹配: {url}"
                         matched_days.add(day_idx)
                         break
                     # 层级2：标题相似度匹配
-                    if title_tok and fp['title_tok'] and self.jaccard_similarity(title_tok, fp['title_tok']) >= title_thresh:
-                        matched_days.add(day_idx)
-                        break
+                    if title_tok and fp['title_tok']:
+                        title_sim = self.jaccard_similarity(title_tok, fp['title_tok'])
+                        if title_sim >= title_thresh:
+                            matched_reason = f"标题相似度匹配: {title_sim:.4f} >= {title_thresh}"
+                            matched_days.add(day_idx)
+                            break
                     # 层级3：内容摘要相似度匹配（仅对较长内容生效）
-                    if len(outline) >= 48 and body_tok and fp['body_tok'] and self.jaccard_similarity(body_tok, fp['body_tok']) >= body_thresh:
-                        matched_days.add(day_idx)
-                        break
+                    if len(outline) >= 48 and body_tok and fp['body_tok']:
+                        body_sim = self.jaccard_similarity(body_tok, fp['body_tok'])
+                        if body_sim >= body_thresh:
+                            matched_reason = f"内容摘要相似度匹配: {body_sim:.4f} >= {body_thresh}"
+                            matched_days.add(day_idx)
+                            break
+                    # 记录未匹配的原因（调试用）
+                    if not matched_reason:
+                        title_sim_val = self.jaccard_similarity(title_tok, fp['title_tok']) if title_tok and fp['title_tok'] else None
+                        body_sim_val = self.jaccard_similarity(body_tok, fp['body_tok']) if body_tok and fp['body_tok'] else None
+                        self.logger.debug(
+                            f"去重检查未匹配 - URL匹配: {url == fp['url_norm'] if url and fp['url_norm'] else 'NA'}, "
+                            f"标题相似度: {title_sim_val:.4f} (阈值:{title_thresh})" if title_sim_val is not None else "标题未计算, "
+                            f"内容长度: {len(outline)}, 内容相似度: {body_sim_val:.4f} (阈值:{body_thresh})" if body_sim_val is not None else "内容未计算"
+                        )
 
             # 决策逻辑：持续热点保留，单次重复剔除
-            if len(matched_days) >= persistent_days_threshold:
+            #if len(matched_days) >= persistent_days_threshold:
                 # 在多个日期出现，视为持续热点，保留
-                kept.append(it)
-            elif len(matched_days) > 0:
+                #kept.append(it)
+            if len(matched_days) > 0:
                 # 仅在部分日期出现，视为重复，剔除
                 dropped += 1
             else:
