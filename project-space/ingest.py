@@ -387,7 +387,8 @@ class IngestModule(WorkModule):
         # 第一步：加载近 n_days 天的历史摘要指纹
         for i in range(1, n_days + 1):
             d = (base - timedelta(days=i)).strftime('%Y-%m-%d')
-            path = self._app_config.output_dir(d) / FN_SUMMARY
+            # 使用历史日期的目录，而不是当前日期的目录
+            path = self._app_config.paths.output_dir().parent / d / FN_SUMMARY
             if not path.exists():
                 continue
             try:
@@ -457,9 +458,9 @@ class IngestModule(WorkModule):
                         )
 
             # 决策逻辑：持续热点保留，单次重复剔除
-            #if len(matched_days) >= persistent_days_threshold:
+            if len(matched_days) >= persistent_days_threshold:
                 # 在多个日期出现，视为持续热点，保留
-                #kept.append(it)
+                kept.append(it)
             if len(matched_days) > 0:
                 # 仅在部分日期出现，视为重复，剔除
                 dropped += 1
