@@ -458,9 +458,9 @@ class IngestModule(WorkModule):
                         )
 
             # 决策逻辑：持续热点保留，单次重复剔除
-            #if len(matched_days) >= persistent_days_threshold:
+            if len(matched_days) >= persistent_days_threshold:
                 # 在多个日期出现，视为持续热点，保留
-                #kept.append(it)
+                kept.append(it)
             if len(matched_days) > 0:
                 # 仅在部分日期出现，视为重复，剔除
                 dropped += 1
