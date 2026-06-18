@@ -33,6 +33,11 @@ dedup:
   recent_summary_text_threshold: 0.45
   outline_fingerprint_max_chars: 1600
   persistent_days_threshold: 4       # 持久化去重天数阈值
+  recent_dedup_backend: "ngram"      # 跨日去重后端: "ngram"（默认）或 "vector"（ChromaDB + sentence-transformers）
+  vector:
+    db_path: "/Users/guanyu.wu/IdeaProjects/ai-frontier-daily/output/chroma_db"                              # ChromaDB 持久化目录（相对项目根）
+    embedding_model: "paraphrase-multilingual-MiniLM-L12-v2"  # 支持中文的多语言模型（首次运行自动下载 ~120MB）
+    similarity_threshold: 0.85                                 # 余弦相似度阈值（0-1）
 
 # ==================== 筛选排序模块配置 ====================
 # 配置新闻筛选和优先级排序的规则

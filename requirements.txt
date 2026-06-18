@@ -10,3 +10,7 @@ lark-oapi>=1.0.0       # 飞书开放平台 Python SDK
 # 开发依赖
 pytest>=8.0.0          # 单元测试
 pytest-asyncio>=0.23.0 # async 测试支持
+
+# 向量去重（可选，仅 dedup.recent_dedup_backend: "vector" 时需要）
+chromadb>=0.4.0                  # 本地向量数据库
+sentence-transformers>=2.2.0     # Embedding 模型

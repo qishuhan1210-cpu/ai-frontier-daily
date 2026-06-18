@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LLM 客户端 - 统一的 OpenAI 兼容 API 调用"""
+"""LLM 客户端 - 统一的 OpenAI/Claude API 调用"""
 
 from __future__ import annotations
 
@@ -12,15 +12,16 @@ from .logger import get_logger
 
 
 class LLMClient:
-    """LLM 客户端 - 封装 OpenAI 兼容 API 调用"""
+    """LLM 客户端 - 封装 OpenAI/Claude API 调用"""
 
     def __init__(self, llm_cfg: dict[str, Any], date: str = None):
         self._cfg = llm_cfg
         self._client: Any | None = None
+        self._model_type: str = self._cfg.get("model_type", "openai").lower()
         self._logger = get_logger('llm_client', date or time.strftime('%Y-%m-%d'))
 
     def _get_client(self) -> Any | None:
-        """获取 OpenAI 客户端实例"""
+        """获取 LLM 客户端实例（支持 OpenAI 和 Claude）"""
         if self._client is not None:
             return self._client
 
@@ -33,14 +34,21 @@ class LLMClient:
         base_url = cfg.get("base_url")
         model_name = cfg.get("model_name")
 
-        if not all([api_key, base_url, model_name]):
-            self._logger.error(f"配置不完整 (api_key={bool(api_key)}, base_url={bool(base_url)}, model_name={bool(model_name)})")
+        if not all([api_key, model_name]):
+            self._logger.error(f"配置不完整 (api_key={bool(api_key)}, model_name={bool(model_name)})")
             return None
 
         try:
-            from openai import OpenAI
-            self._client = OpenAI(api_key=api_key, base_url=base_url)
-            self._logger.info(f"已初始化: {model_name}")
+            if self._model_type == "claude":
+                # 使用 Claude/Anthropic SDK
+                from anthropic import Anthropic
+                self._client = Anthropic(api_key=api_key)
+                self._logger.info(f"已初始化 Claude 客户端: {model_name}")
+            else:
+                # 默认使用 OpenAI SDK
+                from openai import OpenAI
+                self._client = OpenAI(api_key=api_key, base_url=base_url)
+                self._logger.info(f"已初始化 OpenAI 客户端: {model_name}")
             return self._client
         except Exception as e:
             self._logger.error(f"客户端初始化失败: {e}")
@@ -56,23 +64,45 @@ class LLMClient:
         model = self._cfg["model_name"]
 
         input_tokens = len(system) + len(user)
-        self._logger.info(f"请求: model={model}, temp={temperature}, max_tokens={max_tokens}, 输入约 {input_tokens} 字符")
+        self._logger.info(f"请求: model={model}, type={self._model_type}, temp={temperature}, max_tokens={max_tokens}, 输入约 {input_tokens} 字符")
 
         start_time = time.time()
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            )
+            if self._model_type == "claude":
+                # Claude API 调用格式 - 使用流式传输
+                stream = client.messages.create(
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    stream=True,
+                )
+                result = ""
+                for chunk in stream:
+                    if chunk.type == "content_block_delta":
+                        result += chunk.delta.text
+                output_tokens = len(result)
+            else:
+                # OpenAI API 调用格式
+                resp = client.chat.completions.create(
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                )
+                output_tokens = len(resp.choices[0].message.content) if resp.choices else 0
+                result = resp.choices[0].message.content
+
             elapsed = time.time() - start_time
-            output_tokens = len(resp.choices[0].message.content) if resp.choices else 0
             self._logger.info(f"响应: 耗时 {elapsed:.2f}s, 输出约 {output_tokens} 字符")
-            return resp.choices[0].message.content
+            return result
         except Exception as e:
             elapsed = time.time() - start_time
             self._logger.error(f"失败: 耗时 {elapsed:.2f}s, 错误: {e}")

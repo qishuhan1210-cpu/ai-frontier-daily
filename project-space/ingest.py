@@ -485,6 +485,71 @@ class IngestModule(WorkModule):
         except Exception:
             return u.lower()
 
+    def dedup_recent_vector(self, items: List[NewsItem]) -> Tuple[List[NewsItem], dict]:
+        """向量数据库版跨日历史去重（替代 dedup_recent）
+
+        与 dedup_recent 完全等价的决策逻辑，使用 ChromaDB + sentence-transformers
+        替代 Jaccard n-gram 相似度，提升同义不同词的语义识别能力。
+
+        切换方式：config.yaml dedup.recent_dedup_backend: "vector"
+        回滚方式：改回 "ngram" 即可，原 dedup_recent 不受影响。
+        """
+        cfg = self.dedup_config
+        if not cfg.recent_summary_enabled:
+            return items, {'enabled': False, 'dropped': 0}
+
+        n_days = max(0, int(cfg.recent_summary_days))
+        persistent_days_threshold = int(cfg.persistent_days_threshold)
+
+        vector_cfg = getattr(cfg, 'vector', None)
+        db_path = getattr(vector_cfg, 'db_path', './output/chroma_db')
+        model_name = getattr(vector_cfg, 'embedding_model', 'paraphrase-multilingual-MiniLM-L12-v2')
+        similarity_threshold = float(getattr(vector_cfg, 'similarity_threshold', 0.85))
+
+        # db_path 相对路径以项目根目录为基准
+        from utils.base_config import PROJECT_ROOT
+        db_path_abs = str((PROJECT_ROOT / db_path).resolve()) if not db_path.startswith('/') else db_path
+
+        from utils.vector_dedup import VectorDedupEngine
+        engine = VectorDedupEngine(db_path_abs, 'news_dedup', model_name, similarity_threshold, self.logger)
+
+        base = datetime.strptime(self._app_config.date_str, '%Y-%m-%d')
+        date_range = []
+
+        for i in range(1, n_days + 1):
+            d = (base - timedelta(days=i)).strftime('%Y-%m-%d')
+            path = self._app_config.paths.output_dir().parent / d / FN_SUMMARY
+            if not path.exists():
+                continue
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                engine.index_date(d, data.get('clusters', []))
+                date_range.append(d)
+            except Exception:
+                continue
+
+        if not date_range:
+            return items, {'enabled': True, 'dropped': 0}
+
+        kept, dropped = [], 0
+        for it in items:
+            text = f"{it.title or ''} {it.summary or ''}".strip()
+            matched_dates = engine.query_matches(text, self._norm_url(it.url), date_range)
+
+            if len(matched_dates) >= persistent_days_threshold:
+                kept.append(it)
+            if len(matched_dates) > 0:
+                dropped += 1
+            else:
+                kept.append(it)
+
+        # 清理超出 n_days 窗口的过期条目，防止 ChromaDB 无限膨胀
+        cutoff = (base - timedelta(days=n_days)).strftime('%Y-%m-%d')
+        engine.cleanup_before(cutoff)
+
+        return kept, {'enabled': True, 'dropped': dropped}
+
     def run(self, output_file: str) -> dict:
         """执行完整流程"""
         raw_items, crawl_meta = self.fetch()
@@ -492,7 +557,12 @@ class IngestModule(WorkModule):
         raw_items = [NewsItem.from_dict(it) for it in raw_items]
 
         deduped, dedup_meta = self.dedup(raw_items)
-        final, recent_meta = self.dedup_recent(deduped)
+
+        backend = getattr(self.dedup_config, 'recent_dedup_backend', 'ngram')
+        if backend == 'vector':
+            final, recent_meta = self.dedup_recent_vector(deduped)
+        else:
+            final, recent_meta = self.dedup_recent(deduped)
 
         self.save_jsonl(output_file, [it.__dict__ for it in final])
 
